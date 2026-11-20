@@ -1692,10 +1692,15 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     const ctx = {
       id: 'shop.auth',
       address: 'shop.auth',
-      graph: { root: { id: 'shop' } },
+      graph: { root: { id: 'shop' }, edges: [] },
+      lowered: new Map(),
       opts: {},
     } as unknown as LowerContext;
-    const provisioned = { serviceId: 'auth-svc#cloud-id', projectId: 'shop-project#cloud-id' };
+    const provisioned = {
+      serviceId: 'auth-svc#cloud-id',
+      projectId: 'shop-project#cloud-id',
+      endpointDomain: 'https://auth-svc.example',
+    };
     const artifact = { path: '/tmp/auth.tar.gz', sha256: 'sha-auth' };
     const serialized = {
       environment: [
@@ -1740,7 +1745,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       ],
     ]);
     expect(result.outputs).toEqual({
-      url: 'https://shop.auth.deployment.example',
+      url: 'https://auth-svc.example',
       projectId: 'shop-project#cloud-id',
       serviceId: 'deployment-app-of:shop.auth.deployment',
     });
@@ -1750,7 +1755,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       {
         kind: 'compute-service',
         id: 'auth-svc#cloud-id',
-        url: 'https://shop.auth.deployment.example',
+        url: 'https://auth-svc.example',
       },
     ]);
   });
@@ -1760,10 +1765,15 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     const ctx = {
       id: 'shop.auth',
       address: 'shop.auth',
-      graph: { root: { id: 'shop' } },
+      graph: { root: { id: 'shop' }, edges: [] },
+      lowered: new Map(),
       opts: {},
     } as unknown as LowerContext;
-    const provisioned = { serviceId: 'auth-svc#cloud-id', projectId: 'shop-project#cloud-id' };
+    const provisioned = {
+      serviceId: 'auth-svc#cloud-id',
+      projectId: 'shop-project#cloud-id',
+      endpointDomain: 'https://auth-svc.example',
+    };
     const artifact = { path: '/tmp/auth.tar.gz', sha256: 'sha-auth' };
     const serialized = {
       environment: [],
@@ -1785,7 +1795,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       {
         kind: 'compute-service',
         id: 'auth-svc#cloud-id',
-        url: 'https://shop.auth.deployment.example',
+        url: 'https://auth-svc.example',
         details: {
           input: '{"stripeKey":$platform STRIPE_SECRET_KEY}',
           absent: 'greeting → ENV_GREETING\nregion → ENV_REGION',
@@ -1799,10 +1809,15 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     const ctx = {
       id: 'shop.mailer',
       address: 'shop.mailer',
-      graph: { root: { id: 'shop' } },
+      graph: { root: { id: 'shop' }, edges: [] },
+      lowered: new Map(),
       opts: {},
     } as unknown as LowerContext;
-    const provisioned = { serviceId: 'mailer-svc#cloud-id', projectId: 'shop-project#cloud-id' };
+    const provisioned = {
+      serviceId: 'mailer-svc#cloud-id',
+      projectId: 'shop-project#cloud-id',
+      endpointDomain: 'https://mailer-svc.example',
+    };
     const artifact = { path: '/tmp/mailer.tar.gz', sha256: 'sha-mailer' };
     const serialized = {
       environment: [],
@@ -1827,7 +1842,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       {
         kind: 'compute-service',
         id: 'mailer-svc#cloud-id',
-        url: 'https://shop.mailer.deployment.example',
+        url: 'https://mailer-svc.example',
         details: { input: '{"port":$platform SMTP_PORT (number),"from":$platform EMAIL_FROM}' },
       },
     ]);
@@ -1838,10 +1853,15 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     const ctx = {
       id: 'shop.auth',
       address: 'shop.auth',
-      graph: { root: { id: 'shop' } },
+      graph: { root: { id: 'shop' }, edges: [] },
+      lowered: new Map(),
       opts: {},
     } as unknown as LowerContext;
-    const provisioned = { serviceId: 'auth-svc#cloud-id', projectId: 'shop-project#cloud-id' };
+    const provisioned = {
+      serviceId: 'auth-svc#cloud-id',
+      projectId: 'shop-project#cloud-id',
+      endpointDomain: 'https://auth-svc.example',
+    };
     const artifact = { path: '/tmp/auth.tar.gz', sha256: 'sha-auth' };
     const serialized = {
       environment: [],
@@ -1863,7 +1883,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       {
         kind: 'compute-service',
         id: 'auth-svc#cloud-id',
-        url: 'https://shop.auth.deployment.example',
+        url: 'https://auth-svc.example',
         details: {
           input: '{"stripeKey":$platform STRIPE_SECRET_KEY}',
         },
@@ -1985,10 +2005,15 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
     const ctx = {
       id: 'shop.store',
       address: 'shop.store',
-      graph: { root: { id: 'shop' } },
+      graph: { root: { id: 'shop' }, edges: [] },
+      lowered: new Map(),
       opts: {},
     } as unknown as LowerContext;
-    const provisioned = { serviceId: 'store-svc#cloud-id', projectId: 'shop-project#cloud-id' };
+    const provisioned = {
+      serviceId: 'store-svc#cloud-id',
+      projectId: 'shop-project#cloud-id',
+      endpointDomain: 'https://store-svc.example',
+    };
     const artifact = { path: '/tmp/store.tar.gz', sha256: 'sha-store' };
     const serialized = {
       environment: [{ id: 'STORE_PORT-var#cloud-id', key: 'STORE_PORT' }],
@@ -2006,7 +2031,7 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
 
     // The four S3Config fields a consumer's s3() slot resolves by name, plus url.
     expect(result.outputs).toEqual({
-      url: 'https://shop.store.deployment.example',
+      url: 'https://store-svc.example',
       projectId: 'shop-project#cloud-id',
       serviceId: 'deployment-app-of:shop.store.deployment',
       bucket: 'streams',
@@ -2021,7 +2046,7 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
       {
         kind: 'compute-service',
         id: 'store-svc#cloud-id',
-        url: 'https://shop.store.deployment.example',
+        url: 'https://store-svc.example',
       },
     ]);
   });
@@ -3129,18 +3154,28 @@ describe('resource IDs are built from the full address, and each declares the ID
     recorded.renamePolicy.filter(([r]) => r === resource).at(-1)?.[1];
   const idsSince = (rows: ReadonlyArray<[string, unknown]>, before: number) =>
     rows.slice(before).map(([id]) => id);
-  const shopGraph = { root: { id: 'shop' } };
+  const shopGraph = { root: { id: 'shop' }, edges: [] };
 
   test('compute: the App and Deployment of a nested service', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
-    const ctx = { id: 'shop.auth.api', address: 'shop.auth.api', graph: shopGraph, application };
+    const ctx = {
+      id: 'shop.auth.api',
+      address: 'shop.auth.api',
+      graph: shopGraph,
+      application,
+      lowered: new Map(),
+    };
     const before = { svc: recorded.svc.length, deploy: recorded.deploy.length };
 
     run(serviceDescriptorOf(target, 'compute').provision(ctx as unknown as LowerContext));
     run(
       serviceDescriptorOf(target, 'compute').deploy(
         ctx as unknown as LowerContext,
-        { serviceId: 'shop.auth.api#cloud-id', projectId: 'shop-project#cloud-id' },
+        {
+          serviceId: 'shop.auth.api#cloud-id',
+          projectId: 'shop-project#cloud-id',
+          endpointDomain: 'https://shop.auth.api.example',
+        },
         { path: '/tmp/api.tar.gz', sha256: 'sha-api' },
         { environment: [], triggers: {}, platformVariables: [], port: 3000 },
       ),
@@ -3980,6 +4015,16 @@ describe("a compute service's input document travels in its artifact", () => {
         },
       ],
     ]);
+  });
+
+  test("reserve publishes the App's endpoint domain as the service's url", async () => {
+    const { reserve } = serviceDescriptorOf(prismaCloud({ workspaceId: 'ws_1' }), 'compute');
+    if (reserve === undefined) throw new Error('compute declares reserve');
+
+    const result = run<LoweredResult>(reserve(contextFor('Shop'), provisioned, serialize('Shop')));
+
+    expect(result.outputs['url']).toBe('https://shop.web.example');
+    expect(result.entities[0]).toHaveProperty('url', 'https://shop.web.example');
   });
 
   test('reserve writes the input document as a preview variable on the branch of an environment that has one, as serialize does for its variables', async () => {

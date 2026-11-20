@@ -670,7 +670,7 @@ type Outputs = Readonly<Record<string, unknown>>
 // `url` is present only when the descriptor declares the address publicly
 // reachable — a connection string is never a `url` (no core-level rule is safe:
 // `url` on compute is an endpoint, on postgres it would be a DSN). A descriptor
-// constructing one holds `deployment.appEndpointDomain` — an Output<T>, not a T,
+// constructing one holds the App's `appEndpointDomain` — an Output<T>, not a T,
 // because the stack effect runs before Alchemy applies — so construction sites
 // traffic in `Input<DeployedEntity>` (LoweredResult.entities above); apply
 // resolves them before any reader sees them.
@@ -766,13 +766,7 @@ module-provisioned **resource** lowers exactly once via its extension's
 nodes are edges only and never lower. Then for each service:
 
 1. `provision` — the service now has identity (its App).
-2. core **builds the typed `Config`** — each input's declared params matched by
-   name to its producer's `outputs` through the one `dependency` edge:
-   whatever the module wired in — a resource's outputs (shared by every consumer
-   wired to it) or a producer service's deploy outputs (the producer, earlier in
-   topo order, is already fully deployed — its URL is real, not the create-time
-   placeholder) — plus service-param defaults. Leaf values are provisioning refs,
-   not strings.
+2. core **builds the typed `Config`** — each input's declared params matched by name to its producer's `outputs` through the one `dependency` edge: whatever the module wired in — a resource's outputs (shared by every consumer wired to it) or a producer service's deploy outputs — plus service-param defaults. Leaf values are provisioning refs, not strings. Core lowers a producer before its consumers, so a consumer's hooks receive the producer's outputs; how a target makes the consumer's deployment wait for its producers is the target's ([Prisma Cloud](../05-prisma-cloud/alchemy-lowering.md#the-lowering-graphs)).
 3. `serialize(config)` — the pack encodes that typed Config into the service's
    runtime environment (Prisma Cloud: one env write per leaf, keyed by the
    pack's own naming from the address, value = the ref; the input document
@@ -784,15 +778,7 @@ nodes are edges only and never lower. Then for each service:
 5. `deploy(artifact)` — the first version snapshots an environment that is already
    complete.
 
-**How the ordering is actually enforced:** our walk only *assembles* Alchemy
-resource descriptions — Alchemy executes them in dependency order and runs
-unordered resources concurrently; declaration order is never consulted. So core
-realizes the sequence as **dependency edges**: most arise naturally from value flow
-(the env var consumes the project id and the producer's URL), and the one that
-doesn't — deploy-after-serialize — exists because the service descriptor builds
-the `Deployment`'s props out of the environment records it boots with, which is
-PDP's own dataflow restored (the deployment-create call literally contains the
-materialized env map). See the lowering graphs in
+**How the ordering is actually enforced:** our walk only *assembles* Alchemy resource descriptions — Alchemy executes them in dependency order and runs unordered resources concurrently; declaration order is never consulted. So core realizes the sequence as **dependency edges**: most arise naturally from value flow (the env var consumes the project id and the producer's URL), and two do not. Deploy-after-serialize exists because the service descriptor builds the `Deployment`'s props out of the environment records it boots with, which is PDP's own dataflow restored (the deployment-create call literally contains the materialized env map). Deploy-after-producers exists because the service descriptor also builds them out of its producers' outputs, so a consumer's deployment is created after its producers go live. See the lowering graphs in
 [`../05-prisma-cloud/alchemy-lowering.md`](../05-prisma-cloud/alchemy-lowering.md).
 This is what makes the fresh-deploy config race (PRO-211) structurally impossible
 on every target — the edge's **ordering** job. Its second job, **propagating**
@@ -1098,7 +1084,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
             const svc = yield* Prisma.App(address, {
               project: projectIdOf(application), displayName: address, regionId: o.region ?? "us-east-1", logicalId: address,
             })
-            return { serviceId: svc.appId, projectId: projectIdOf(application) }  // : ComputeProvisioned
+            return { serviceId: svc.appId, projectId: projectIdOf(application), endpointDomain: svc.appEndpointDomain }  // : ComputeProvisioned
           }),
 
         // Encode the typed Config into the runtime environment — one env var per
@@ -1133,22 +1119,30 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
           Effect.try(() => Prisma.packageComputeArtifact({ id, bundleDir: assembled.dir, appEntry: assembled.entry, address, inputDocument: serialized.input && JSON.parse(serialized.input.value) })),
 
         // create → upload → start → promote. The app id is read through
-        // serialize's env-var records, so the deployment depends on them — the
-        // ordering edge that kills PRO-211. Returns a LoweredResult: `url` IS
+        // serialize's env-var records and every output of its producers, so the
+        // deployment is created after its rows are written (PRO-211) and after
+        // its producers are promoted. Returns a LoweredResult: `url` IS
         // published here — a Compute service's deployed URL is a public endpoint,
-        // and this descriptor is the only party that knows it. Both fields are
-        // still Output refs until apply.
-        deploy: ({ address }, provisioned, artifact, serialized) =>
+        // and this descriptor is the only party that knows it. It is the App's
+        // domain, not the deployment's: the deployment is promoted on every
+        // deploy, so its domain is unknown while planning, and every service
+        // reading the URL would get a new deployment. Both fields are still
+        // Output refs until apply.
+        deploy: ({ id, address, graph, lowered }, provisioned, artifact, serialized) =>
           Effect.gen(function* () {
+            const producerOutputs = graph.edges
+              .filter((edge) => edge.kind === "dependency" && edge.to === id)
+              .flatMap((edge) => Object.values(lowered.get(edge.from) ?? {}))
+              .filter(Output.isOutput)
             const deployment = yield* Prisma.Deployment(`${address}.deployment`, {
-              app: appAfterEnvironment(provisioned.serviceId, serialized.environment),
+              app: appAfter(provisioned.serviceId, serialized.environment, producerOutputs),
               artifactPath: artifact.path,
               artifactContentType: "application/gzip",
               portMapping: { http: serialized.port }, start: true, promote: true,
             })
             return {
-              outputs: { url: deployment.appEndpointDomain, projectId: provisioned.projectId },
-              entities: [{ kind: "compute-service", id: provisioned.serviceId, url: deployment.appEndpointDomain }],
+              outputs: { url: provisioned.endpointDomain, projectId: provisioned.projectId, serviceId: deployment.appId },
+              entities: [{ kind: "compute-service", id: provisioned.serviceId, url: provisioned.endpointDomain }],
             }
           }),
       },

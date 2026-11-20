@@ -85,7 +85,7 @@ This is the timing model Prisma Composer's graph must respect:
 | any time | ConfigVariable rows are created/updated/deleted via the environment-variables API — **rows only; no effect on any existing version** | `routes/v1/environment-variables.ts` |
 | **version create** | `materializeBranchEnvVars(app.branchId)` resolves the complete map — production branch → production templates; preview branch → preview templates merged with that branch's overrides (override wins) — decrypts it, and hands the **plain map to Foundry with the version**. The env is **frozen into the version** | `routes/v1/versions.ts` → `resolveDeployEnvVars.ts` → `compute-config/materializeBranchEnvVars.ts` |
 | version start | boots the version; **no env re-resolution** | `routes/v1/version-handlers.ts` |
-| promote | endpoint routed to the version; `serviceEndpointDomain` persisted. The domain returned at *create* time is a placeholder region — only the post-promote read is trustworthy (PRO-200) | `interactors/compute/service.ts` |
+| promote | endpoint routed to the version; `serviceEndpointDomain` persisted. The domain returned at *create* names the domain the service will serve on | `interactors/compute/service.ts` |
 
 Consequences Prisma Composer designs around:
 

@@ -3,11 +3,7 @@
 import * as Prisma from '@alchemy.run/prisma';
 import type { ServiceLowering } from '@internal/core/deploy';
 import { describeDocument, type PlatformMarkerUse } from '@internal/input-document';
-import {
-  ARTIFACT_CONTENT_TYPE,
-  appAfterEnvironment,
-  packageComputeArtifact,
-} from '@internal/lowering';
+import { ARTIFACT_CONTENT_TYPE, appAfter, packageComputeArtifact } from '@internal/lowering';
 import * as Output from 'alchemy/Output';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
@@ -32,6 +28,7 @@ import {
   logicalIdProp,
   projectIdOf,
   type ResolvedCloudOptions,
+  type ServiceProvisionedAttributes,
   validatePlatformName,
   variableClassAndBranch,
 } from './shared.ts';
@@ -53,10 +50,7 @@ function declaresNoListening(node: unknown): boolean {
 export interface ComputeProvisioned {
   readonly serviceId: Output.Output<string>;
   readonly projectId: string;
-  /** The platform-assigned public origin domain — resolves to `undefined` only
-   *  in the narrow provider-response gap the origin param's deploy-side value
-   *  function enforces away (control.ts's `selfOriginValue`): every other
-   *  reader may treat it as present. */
+  /** The platform-assigned public origin domain. Read it through `endpointDomainOf`, which fails the deploy when the platform reported none. */
   readonly endpointDomain: Output.Output<string | undefined>;
 }
 
@@ -111,13 +105,25 @@ function originOf(
         `address — known services: ${known}.`,
     );
   }
-  return Output.map(provisioned.endpointDomain, (v) => {
-    if (v === undefined) {
+  return endpointDomainOf(
+    provisioned,
+    target,
+    `cannot resolve serviceOrigin("${target}") for "${consumer}"`,
+  );
+}
+
+export function endpointDomainOf(
+  provisioned: ServiceProvisionedAttributes,
+  address: string,
+  consequence?: string,
+): Output.Output<string> {
+  return Output.map(provisioned.endpointDomain, (domain) => {
+    if (domain === undefined) {
       throw new Error(
-        `the App for "${target}" reported no endpoint domain — cannot resolve serviceOrigin("${target}") for "${consumer}".`,
+        `the App for "${address}" reported no endpoint domain${consequence === undefined ? '' : `: ${consequence}`}.`,
       );
     }
-    return v;
+    return domain;
   });
 }
 
@@ -352,8 +358,13 @@ export function computeDescriptor(
         }),
       ),
 
-    deploy: ({ address, graph, preflight }, provisioned, artifact, serialized) =>
+    deploy: ({ id, address, graph, lowered, preflight }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
+        // Only to order this deployment after its producers are live; their values reach it through the rows and triggers.
+        const producerOutputs = graph.edges
+          .filter((edge) => edge.kind === 'dependency' && edge.to === id)
+          .flatMap((edge) => Object.values(lowered.get(edge.from) ?? {}))
+          .filter(Output.isOutput);
         const { platformVariableVersion } = preflightView(preflight);
         // Env keys never contain ':', so a `<name>:updatedAt` member cannot
         // collide with a row's own trigger member. The key name is historical:
@@ -370,10 +381,9 @@ export function computeDescriptor(
         };
         const app = graph.root.id;
         const deployment = yield* Prisma.Deployment(resourceId(address, 'deployment'), {
-          // `app` carries the ordering edge on serialize's variable writes as
-          // well as the app id — see `appAfterEnvironment` for why it is the
-          // only prop that can (PRO-211).
-          app: appAfterEnvironment(provisioned.serviceId, serialized.environment),
+          // `app` carries the ordering edges as well as the app id — see
+          // `appAfter` for why it is the only prop that can.
+          app: appAfter(provisioned.serviceId, serialized.environment, producerOutputs),
           artifactPath: artifact.path,
           // The artifact IS a gzipped tar (see @internal/lowering's packager);
           // upstream sends this as the upload's Content-Type and folds it into
@@ -394,22 +404,20 @@ export function computeDescriptor(
           start: true,
           promote: true,
         }).pipe(fromLegacyId(legacyNodeResourceId(app, address, 'deploy')));
-        // `url` IS published here: a Compute service's deployed URL is a
-        // public endpoint, and this descriptor is the only party that knows
-        // that. Both fields are still unresolved Output references at this
-        // point — apply resolves them before the report's runner sees them.
-        //
+        const url = endpointDomainOf(provisioned, address);
         return {
           outputs: {
-            url: deployment.appEndpointDomain,
+            // The App's domain, not the deployment's: the deployment's is unknown while planning, so every consumer of this url would get a new deployment.
+            url,
             projectId: provisioned.projectId,
+            // From the deployment, so it resolves once this service is live: a custom domain binds to the live version, and its consumers' deployments wait for it.
             serviceId: deployment.appId,
           },
           entities: [
             {
               kind: 'compute-service',
               id: provisioned.serviceId,
-              url: deployment.appEndpointDomain,
+              url,
               ...inputDetails(serialized),
             },
           ],
@@ -418,10 +426,8 @@ export function computeDescriptor(
 
     // ADR-0056: a service that runs its build adapter's dev server under
     // `prisma dev` has no artifact. What `deploy` returns, with the
-    // `Deployment` removed: the URL comes from the App, which locally is the
-    // same `http://localhost:<port>` the Deployment would report, so
-    // dependents' rows do not change between a served and an assembled run.
-    // With no artifact to carry it, the input document is a variable.
+    // `Deployment` removed. With no artifact to carry it, the input document
+    // is a variable.
     reserve: ({ address, application, graph }, provisioned, serialized) =>
       Effect.gen(function* () {
         const { input } = serialized;
@@ -433,14 +439,7 @@ export function computeDescriptor(
             ...variableClassAndBranch(application),
           }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyInputKey(graph.root.id, address))));
         }
-        const url = Output.map(provisioned.endpointDomain, (domain) => {
-          if (domain === undefined) {
-            throw new Error(
-              'the App reported no endpoint domain for a service without a deployment.',
-            );
-          }
-          return domain;
-        });
+        const url = endpointDomainOf(provisioned, address);
         return {
           outputs: { url, projectId: provisioned.projectId, serviceId: provisioned.serviceId },
           entities: [

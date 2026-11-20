@@ -67,9 +67,9 @@ behind them.
 | `Prisma.Project` | Project | name | projectId | **one per Prisma Composer application**; resolved by the CLI before Alchemy runs, so no lowering yields one |
 | `Prisma.Database` | Database | project, name?, region, branchId?, logicalId? | databaseId, connection strings | one per Module-provisioned postgres resource; never the project default; a branch-attached database is created with `branchId` and no display name (upstream refuses the combination — see [deploying.md](../../guides/deploying.md)) |
 | `Prisma.Connection` | database connection info | database, name | connectionId, directConnectionString | Composer binds the DIRECT string explicitly; upstream's `databaseUrl` is pooled-first |
-| `Prisma.App` | App | project, displayName, regionId, branchId?, logicalId? | appId, appEndpointDomain | `branchId` targets the Branch of an environment other than `production`; omitted, upstream attaches the App to the project's default (production) Branch. `appEndpointDomain` is available at provision — that is what a service's own origin is read from |
+| `Prisma.App` | App | project, displayName, regionId, branchId?, logicalId? | appId, appEndpointDomain | `branchId` targets the Branch of an environment other than `production`; omitted, upstream attaches the App to the project's default (production) Branch. `appEndpointDomain` is available at provision — that is what a service's own origin and its published `url` are read from |
 | `Prisma.EnvironmentVariable` | ConfigVariable | project, class, key, value (Redacted), branchId? | environmentVariableId | production-class with no `branchId` for `production`; preview-class with `branchId` for any other environment. Values are write-only, so upstream re-applies the desired one on every deploy |
-| `Prisma.Deployment` | Deployment (ComputeVersion) + Promotion | app, artifactPath, artifactContentType, portMapping, triggers, start, promote | deploymentId, appEndpointDomain | provider reconcile: create → upload tar.gz → start → poll until running → promote; `appEndpointDomain` read **post-promote** (create-time domain is a placeholder — PRO-200). It is replaced, not updated, when its artifact fingerprint or its `triggers` fingerprint moves |
+| `Prisma.Deployment` | Deployment (ComputeVersion) + Promotion | app, artifactPath, artifactContentType, portMapping, triggers, start, promote | deploymentId, appEndpointDomain | provider reconcile: create → upload tar.gz → start → poll until running → promote; `appEndpointDomain` read **post-promote**; it is the same domain the App reports from its create. It is replaced, not updated, when its artifact fingerprint or its `triggers` fingerprint moves |
 | `Prisma.Bucket` | Bucket | project, name, branchId?, logicalId? | bucketId, name | one per bucket resource; `Prisma.BucketAccessKey` mints its read-write S3 credentials, which become the node's outputs |
 
 `logicalId` is set on every deploy except branchless local dev; [§ Platform identity](#platform-identity-logicalid) says what it carries.
@@ -178,14 +178,7 @@ logic is untouched.
   Management API; the table above is that mapping. One resource maps to one PDP
   entity except `Deployment`, which spans version-create + upload + start +
   promote (and therefore owns the env-snapshot moment).
-- **PDP → ours**: `foundryVersionId`, `Promotion`, and Foundry's version record
-  have no resource of ours; they are internal to the `Deployment` provider's
-  behavior or unmodeled. **Branch** likewise has no Alchemy resource — it is
-  resolved and its lifecycle managed by the CLI's container-resolution
-  client, outside the Alchemy graph entirely (see
-  [§ Environments and container resolution](#environments-and-container-resolution)).
-  `serviceEndpointDomain` surfaces as `App.appEndpointDomain` (before the first
-  deploy) and `Deployment.appEndpointDomain` (post-promote).
+- **PDP → ours**: `foundryVersionId`, `Promotion`, and Foundry's version record have no resource of ours; they are internal to the `Deployment` provider's behavior or unmodeled. **Branch** likewise has no Alchemy resource — it is resolved and its lifecycle managed by the CLI's container-resolution client, outside the Alchemy graph entirely (see [§ Environments and container resolution](#environments-and-container-resolution)). `serviceEndpointDomain` surfaces as `App.appEndpointDomain` and `Deployment.appEndpointDomain`; both are the same domain.
 
 ## The lowering graphs
 
@@ -215,8 +208,9 @@ flowchart TB
     Ss[App shop.storefront] --> Ds[Deployment shop.storefront.deployment]
     EVa -- resource ref --> Da
     EVs -- resource ref --> Ds
-    Da -- appEndpointDomain --> EVu["EnvironmentVariable(COMPOSER_SHOP_STOREFRONT_AUTH_URL)"]
+    Sa -- appEndpointDomain --> EVu["EnvironmentVariable(COMPOSER_SHOP_STOREFRONT_AUTH_URL)"]
     EVu -- resource ref --> Ds
+    Da -- "serviceId (after promote)" --> Ds
   end
 ```
 
@@ -227,12 +221,9 @@ How the pieces map:
 - **Each service** lowers to an `App → Deployment` chain plus its own
   `Database → Connection`, whose url is written as that service's **explicitly
   named** variable — the same `serialize` path as any other config value.
-- **The connection** lowers to two edges: the producer's endpoint domain flows
-  into a named `EnvironmentVariable`, and that **whole resource flows into the
-  consumer's `Deployment`** through its `app` prop.
-- Every `EnvironmentVariable` a Deployment boots with is threaded into its
-  `app` — database URLs and connection URLs alike — so the deployment
-  depends on its config being written first.
+- **The connection** lowers to two edges: the producer's App's endpoint domain flows into a named `EnvironmentVariable`, and that **whole resource flows into the consumer's `Deployment`** through its `app` prop. The domain comes from the App, not the Deployment: the Deployment is promoted on every deploy, so its domain is unknown while planning, and a consumer's deployment, whose triggers hold the value, would be replaced on every deploy. Because the App's domain is known, an unchanged consumer keeps its deployment when its producer is redeployed.
+- Every `EnvironmentVariable` a Deployment boots with is threaded into its `app` — database URLs and connection URLs alike — so the deployment depends on its config being written first.
+- Every output of a consumer's producers is threaded into its Deployment's `app` too, so its deployment waits for its producers' promotion: a Compute producer's `serviceId` comes from its Deployment and resolves only after the promotion. The wait is on `app`, not in `triggers`, and upstream treats an unresolved `app` as unchanged, so an unchanged consumer is not replaced.
 - The Deployment's `portMapping.http` rides the same seam: `serialize` resolves
   the service's `port` param from the typed Config and surfaces it in its
   outputs, and `deploy` routes the platform to it — so the routed port and the
@@ -247,25 +238,11 @@ deployment-create, so new and replacement deployments boot with the completed
 configuration updates.
 Without it the two race — the failure documented as PRO-211 in `gotchas.md`.
 
-**Why the edge rides `app`.** Upstream's `Prisma.Deployment` has no
-`environment` prop (Composer's deleted one did). Alchemy derives its dependency
-graph from the resource references a prop's *value* is built from, so the
-descriptor builds `app` as an Output over the app id AND every whole variable
-resource, resolving to the app id itself: the graph gains the edges. A persisted
-variable ID can resolve before its pending value update finishes; the whole
-resource keeps that update as a dependency. The edge cannot ride
-`artifactPath` (or any of upstream's other replacement-block props): the diff
-reads that block as one unit and gives no opinion the moment any member is
-unresolved — and a brand-new variable's reference IS unresolved at plan time —
-which would skip the artifact comparison and silently drop a code change.
-`compute/deployment-edge.ts` records the full argument and its test drives
-upstream's real diff.
+**Why the edge rides `app`.** Upstream's `Prisma.Deployment` has no `environment` prop (Composer's deleted one did). Alchemy derives its dependency graph from the resource references a prop's *value* is built from, so the descriptor builds `app` as an Output over the app id, every whole variable resource and every output of the service's producers, resolving to the app id itself: the graph gains the edges. A persisted variable ID can resolve before its pending value update finishes; the whole resource keeps that update as a dependency. The edge cannot ride `artifactPath` (or any of upstream's other replacement-block props): the diff reads that block as one unit and gives no opinion the moment any member is unresolved — and a brand-new variable's reference IS unresolved at plan time — which would skip the artifact comparison and silently drop a code change. [ADR-0048](../90-decisions/ADR-0048-prisma-cloud-resources-come-from-the-upstream-alchemy-provider.md) records the full argument, and `compute/__tests__/deployment-edge.test.ts` drives upstream's real diff.
 
 **Change propagation is wired through `Prisma.Deployment.triggers`.** The platform freezes a deployment's environment at create, so a *value* change (a rotated URL) reaches a running service only through a new deployment. The compute descriptor declares one trigger member per environment row, carrying the same `Redacted` value the row writes; upstream folds the resolved members into a salted fingerprint inside its own encrypted state and plans a replacement exactly when one moved (and conservatively when a member cannot be resolved at plan time because the producing resource is itself changing). Unchanged service → same fingerprint → reuse; changed value or artifact → replace. Because upstream resolves the actual values, a value re-issued under a stable resource identity (a connection rotated in place, a re-minted service key) moves the fingerprint too. No plaintext lands in state — the members are `Redacted` in props and only the salted hash is persisted. A platform variable a row merely POINTS at (operator-owned; Composer never reads its value) contributes a `<name>:updatedAt` member instead, read at preflight and handed to the lowering in the extension's preflight payload, so an out-of-band rotation still ships a new deployment. A service's input document is not an environment row and has no trigger member: it travels in the service's artifact, in the `inputDocument` field of `compute.bootstrap.json` ([ADR-0065](../90-decisions/ADR-0065-a-compute-services-input-document-travels-in-its-artifact.md)), so a changed document changes the artifact's bytes and its content-addressed `artifactPath`, which replaces the deployment. A platform variable the document names is still a `<name>:updatedAt` member.
 
-The framework's core constructs these edges when lowering a connection (the
-`serialize` env-var records thread into `deploy` through the service SPI); no pack
-author and no app author ever hand-wires them.
+The compute descriptor constructs these edges (the `serialize` env-var records thread into `deploy` through the service SPI, and the producers' outputs come from the lowering context); no app author ever hand-wires them.
 
 ## Related
 

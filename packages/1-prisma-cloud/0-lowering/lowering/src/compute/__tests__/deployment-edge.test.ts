@@ -21,7 +21,7 @@ import { sha256, sha256Object } from 'alchemy/Util/sha256';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import { appAfterEnvironment } from '../deployment-edge.ts';
+import { appAfter } from '../deployment-edge.ts';
 
 /** A stack the resource constructors register into; nothing ever applies it. */
 const stack = { name: 'shop', stage: 'prod', resources: {}, bindings: {}, actions: {} };
@@ -66,7 +66,7 @@ afterAll(() => {
 
 /** The deploy hook's props, built by the same helper the descriptor uses. */
 const deploymentProps = (triggers?: Record<string, unknown>) => ({
-  app: appAfterEnvironment(app.appId, environment),
+  app: appAfter(app.appId, environment, []),
   artifactPath,
   artifactContentType: 'application/gzip',
   portMapping: { http: 8080 },
@@ -158,7 +158,7 @@ const diffAgainst = async (
   );
 };
 
-describe('appAfterEnvironment — the edge Alchemy actually plans on', () => {
+describe('appAfter — the edge Alchemy actually plans on', () => {
   test('every variable AND the app are upstream of the deployment', () => {
     const upstream = Output.upstreamAny(deploymentProps());
     expect(Object.keys(upstream).sort()).toEqual(
@@ -168,7 +168,7 @@ describe('appAfterEnvironment — the edge Alchemy actually plans on', () => {
 
   test('the combined expression still resolves to the app id — not a variable id or tuple', () => {
     const resolved = Effect.runSync(
-      Output.evaluate(appAfterEnvironment(app.appId, environment), {
+      Output.evaluate(appAfter(app.appId, environment, []), {
         'auth-svc': { appId: 'app-123' },
         'COMPOSER_AUTH_PORT-var': { environmentVariableId: 'var-1' },
         'COMPOSER_AUTH_DB_URL-var': { environmentVariableId: 'var-2' },
@@ -178,9 +178,31 @@ describe('appAfterEnvironment — the edge Alchemy actually plans on', () => {
   });
 
   test('a service with no variables passes the app id straight through', () => {
-    expect(Object.keys(Output.upstreamAny({ app: appAfterEnvironment(app.appId, []) }))).toEqual([
+    expect(Object.keys(Output.upstreamAny({ app: appAfter(app.appId, [], []) }))).toEqual([
       'auth-svc',
     ]);
+  });
+
+  test("a producer's outputs are upstream of the deployment, and it still resolves to the app id", () => {
+    const producer = registered(
+      Prisma.App('producer-svc', {
+        project: 'proj-1',
+        displayName: 'producer',
+        regionId: 'us-east-1',
+      }),
+    );
+    const edge = appAfter(app.appId, [], [producer.appId]);
+
+    expect(Object.keys(Output.upstreamAny({ app: edge })).sort()).toEqual(
+      ['auth-svc', 'producer-svc'].sort(),
+    );
+    const resolved = Effect.runSync(
+      Output.evaluate(edge, {
+        'auth-svc': { appId: 'app-123' },
+        'producer-svc': { appId: 'app-456' },
+      }) as Effect.Effect<string>,
+    );
+    expect(resolved).toBe('app-123');
   });
 
   test('the artifact props are plain values, never expressions', () => {

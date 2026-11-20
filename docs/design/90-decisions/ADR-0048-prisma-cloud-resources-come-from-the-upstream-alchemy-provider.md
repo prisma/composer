@@ -4,6 +4,7 @@ Amended by [ADR-0057](ADR-0057-a-nodes-address-is-its-full-path-from-the-app-nam
 
 Amended 2026-10-30: from Alchemy 2.0.0-beta.84 the provider is its own package, `@alchemy.run/prisma`, versioned in lockstep with `alchemy`; before that it was the `alchemy/Prisma` module of the `alchemy` package. Only `@prisma/composer-prisma-cloud` and the Prisma Cloud internals it bundles depend on it; `@prisma/composer` and `@prisma/composer-cli` depend on `alchemy` alone. The move kept every resource type id (`Prisma.*`), so deploy state carries over unchanged. The decision below is unchanged.
 
+Amended 2026-11-20: a compute service's published `url` is its App's `appEndpointDomain`, not its Deployment's: the Deployment is updated on every deploy, so its domain is unknown while planning, and every consumer's deployment, whose `triggers` hold the url, would be replaced on every deploy. A consumer's deployment waits for its producers' promotion through the deployment's `app` prop, which also carries every output of the nodes it depends on (a compute producer's `serviceId` resolves only after its promotion), never through `triggers`, so an unchanged consumer is reused.
 
 ## Decision
 
@@ -31,7 +32,7 @@ and a lowered compute service is upstream resources wired by Composer's descript
 const app = Prisma.App(`${id}-svc`, { project, regionId, branchId });
 const vars = records.map((r) => Prisma.EnvironmentVariable(...));
 const deployment = Prisma.Deployment(`${id}-deploy`, {
-  app: dependsOnEnvironment(app, vars),   // see "The ordering edge" below
+  app: appAfter(app, vars, producerOutputs), // see "The ordering edge" below
   artifactPath,                            // Composer's own tar.gz — never built by Alchemy
   start: true,
   promote: true,

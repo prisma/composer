@@ -24,7 +24,7 @@ import {
   prismaCloudContainerOf,
 } from '../container.ts';
 import { bucketDescriptor } from '../descriptors/bucket.ts';
-import { computeDescriptor } from '../descriptors/compute.ts';
+import { computeDescriptor, endpointDomainOf } from '../descriptors/compute.ts';
 import { postgresDescriptor } from '../descriptors/orm-postgres.ts';
 import { platformVariableDescriptor } from '../descriptors/platform-variable.ts';
 import { publicUrlDescriptor } from '../descriptors/public-url.ts';
@@ -153,26 +153,6 @@ const streamsApiKeyValue: ProviderParam['value'] = (refs) => {
   });
 };
 
-/**
- * Origin's deploy-side value function (service-derived): the provisioned
- * service's own `endpointDomain`, verbatim — `https://…`, no trailing slash,
- * no normalization. Every compute service gets this row, exposing or not.
- * The undefined guard is a deploy-time invariant check, not a policy: the
- * Management API always reports an endpoint domain post-PRO-200, so a missing
- * one means the platform predates the fix — fail the deploy loudly rather
- * than write a row origin() would trust. The raw string is JSON-encoded by
- * the descriptor's generic loop, like every other reserved provider param.
- */
-const selfOriginValue: ServiceProviderParam['valueForService'] = (provisioned, address) =>
-  Output.map(provisioned.endpointDomain, (v) => {
-    if (v === undefined) {
-      throw new Error(
-        `the App for "${address}" reported no endpoint domain at provision — cannot resolve the service's own origin (Management API predates the PRO-200 fix?)`,
-      );
-    }
-    return v;
-  });
-
 /** The user-facing state descriptor: `state: prismaState()` in the `composer` section of `prisma.config.ts` (ADR-0017). */
 export const prismaState = (): StateDescriptor => ({
   extension: PRISMA_CLOUD_EXTENSION_ID,
@@ -249,7 +229,8 @@ const PROVIDER_PARAM_VALUES: ReadonlyMap<symbol, ProviderParamValue> = new Map<
 >([
   [RPC_PEER_KEY, { value: rpcAcceptedKeysValue }],
   [STREAMS_API_KEY, { value: streamsApiKeyValue }],
-  [SELF_ORIGIN, { valueForService: selfOriginValue }],
+  // The service's own App domain, verbatim, written for every compute service whether it exposes anything or not.
+  [SELF_ORIGIN, { valueForService: endpointDomainOf }],
 ]);
 
 /**

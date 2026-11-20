@@ -8,9 +8,9 @@ import * as Exit from 'effect/Exit';
 import * as Fiber from 'effect/Fiber';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import { data, fakeManagementApi, page } from '../../__tests__/fake-management-api.ts';
+import { data, fakeManagementApi, page } from '../../fake-management-api.ts';
 import { runScratch, scratchStack } from '../../scratch-stack.ts';
-import { appAfterEnvironment } from '../deployment-edge.ts';
+import { appAfter } from '../deployment-edge.ts';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -212,7 +212,7 @@ test.each(scenarios)(
           );
         }
         const deployment = yield* Prisma.Deployment('deployment', {
-          app: appAfterEnvironment(Output.asOutput('app-1'), environment),
+          app: appAfter(Output.asOutput('app-1'), environment, []),
           skipCodeUpload: true,
           start: false,
           // Environment values alone must replace the deployment. The drift case
