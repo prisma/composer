@@ -1,22 +1,27 @@
 /**
- * What a consumer of a `postgres()` database waits for, against the REAL
- * Output machinery and the real resource constructors (no cloud, nothing
- * applies). Every consumer reads the database through the lowering's `url`
- * output — its environment row writes it and its deployment's triggers carry
- * it — so whatever `url` references is what Alchemy schedules them after.
+ * What a consumer of a `postgres()` database waits for, against the REAL Output machinery and the real resource
+ * constructors (no cloud, nothing applies): the url reaches the consumer's deployment through its `variables`.
  */
 import { describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
-import * as Prisma from '@alchemy.run/prisma';
 import type { LowerContext, LoweredResult } from '@internal/core/deploy';
 import * as Output from 'alchemy/Output';
 import { Stack } from 'alchemy/Stack';
 import * as Effect from 'effect/Effect';
-import * as Redacted from 'effect/Redacted';
+import { compute } from '../compute.ts';
+import { computeDescriptor } from '../descriptors/compute.ts';
 import { postgresDescriptor } from '../descriptors/orm-postgres.ts';
+import { rawPostgres } from '../exports/index.ts';
 import { dataContract, postgres } from '../exports/orm.ts';
 import widgetContractJson from './fixtures/widget-contract/emitted/contract.json' with {
   type: 'json',
+};
+
+const build = {
+  extension: '@prisma/composer/node',
+  type: 'node',
+  module: 'file:///test/service.ts',
+  entry: 'server.js',
 };
 
 /** A stack the resource constructors register into; nothing ever applies it. */
@@ -69,19 +74,43 @@ describe("the postgres lowering's url — what every consumer is scheduled after
     expect(resolved).toBe('postgres://pndata');
   });
 
-  test("a consumer's environment row built from the url waits for the migration", () => {
-    const url = outputs['url'] as Output.Output<string>;
-    // Built the way the compute descriptor builds a dependency-input row.
-    const row = Effect.runSync(
+  test("a consumer's deployment, created with the url in its variables, waits for the migration", async () => {
+    const consumer = compute({ name: 'widgets', deps: { db: rawPostgres() }, build });
+    const consumerCtx = {
+      ...ctx,
+      id: 'shop.widgets',
+      address: 'shop.widgets',
+      node: consumer,
+      graph: { root: { id: 'shop' }, edges: [], nodes: [], inputBindings: [] },
+      lowered: new Map(),
+      provisioned: new Map(),
+    } as unknown as LowerContext;
+    const descriptor = computeDescriptor(() => ({
+      workspaceId: 'ws_1',
+      providerParams: new Map(),
+    }));
+
+    await Effect.runPromise(
       registered(
-        Prisma.EnvironmentVariable('shop.widgets.env.COMPOSER_SHOP_WIDGETS_DB_URL', {
-          project: 'proj-1',
-          class: 'production',
-          key: 'COMPOSER_SHOP_WIDGETS_DB_URL',
-          value: Output.map(url, Redacted.make),
-        }),
+        Effect.gen(function* () {
+          const provisioned = yield* descriptor.provision(consumerCtx);
+          const serialized = yield* descriptor.serialize(consumerCtx, provisioned, {
+            service: { port: 3000 },
+            inputs: { db: { url: outputs['url'] } },
+          });
+          yield* descriptor.deploy(
+            consumerCtx,
+            provisioned,
+            { path: '/tmp/widgets.tar.gz', sha256: 'sha-widgets' },
+            serialized,
+          );
+        }) as Effect.Effect<void, unknown, unknown>,
       ),
     );
-    expect(Object.keys(Output.upstreamAny(row.Props))).toContain('shop.pndata.migration');
+
+    const deployment = (stack.resources as Record<string, { Props: unknown }>)[
+      'shop.widgets.deployment'
+    ];
+    expect(Object.keys(Output.upstreamAny(deployment?.Props))).toContain('shop.pndata.migration');
   });
 });

@@ -48,13 +48,8 @@ const managementApiHttpLayer = (origin: string) =>
 
 type EnvironmentVariableService = Provider.ProviderService<Prisma.EnvironmentVariable>;
 
-/**
- * Upstream's variable row provider, except that a row the platform refuses to
- * delete because its recorded project, branch, class or key differ from the
- * platform's is dropped from deploy state with a warning. Hosted deploys
- * declare no rows, so every delete removes a row an older Composer wrote, and
- * one such row would otherwise fail this deploy and every later one.
- */
+// Correct only while hosted deploys declare no rows, so every delete is of a row an older Composer wrote:
+// a row whose recorded identity no longer matches would otherwise fail this deploy and every later one.
 const droppingMismatchedRows = (
   service: EnvironmentVariableService,
 ): EnvironmentVariableService => ({
@@ -81,7 +76,7 @@ const droppingMismatchedRows = (
       }),
 });
 
-export const environmentVariableProvider = () =>
+export const providerForDeletingOldVariableRows = () =>
   Provider.effect(
     Prisma.EnvironmentVariable,
     Effect.map(Prisma.EnvironmentVariable.Provider, droppingMismatchedRows),
@@ -106,7 +101,7 @@ const upstreamPrismaProviders = (baseUrl: string, clientSupplied: boolean) =>
     Prisma.ConnectionProvider(),
     Prisma.AppProvider(),
     Prisma.DeploymentProvider(),
-    environmentVariableProvider(),
+    providerForDeletingOldVariableRows(),
     Prisma.BucketProvider(),
     Prisma.BucketAccessKeyProvider(),
     Prisma.CustomDomainProvider(),

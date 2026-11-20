@@ -11,6 +11,7 @@ const usage = 'Usage: bun scripts/check-patched-dependencies.ts, run from the re
 export interface Manifest {
   readonly name: string;
   readonly dependencies?: Readonly<Record<string, string>>;
+  readonly devDependencies?: Readonly<Record<string, string>>;
   readonly peerDependencies?: Readonly<Record<string, string>>;
   readonly optionalDependencies?: Readonly<Record<string, string>>;
 }

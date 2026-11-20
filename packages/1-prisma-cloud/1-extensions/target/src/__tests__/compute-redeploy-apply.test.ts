@@ -5,7 +5,7 @@ import * as Prisma from '@alchemy.run/prisma';
 import type { Contract } from '@internal/core';
 import { dependency, string } from '@internal/core';
 import type { LowerContext } from '@internal/core/deploy';
-import { environmentVariableProvider } from '@internal/lowering';
+import { providerForDeletingOldVariableRows } from '@internal/lowering';
 import {
   data,
   fakeManagementApi,
@@ -30,7 +30,7 @@ import { GeneratedParamProvider } from '../generated-param-resource.ts';
 import { SELF_ORIGIN } from '../origin-key.ts';
 import { RESERVED_PROVIDER_PARAMS } from '../provider-params.ts';
 import { resourceId } from '../resource-ids.ts';
-import { SentKeysProvider } from '../sent-keys-resource.ts';
+import { SentVariableNamesProvider } from '../sent-variable-names-resource.ts';
 import { STREAMS_API_KEY } from '../streams-keys.ts';
 
 const PROJECT_ID = 'proj_1';
@@ -238,8 +238,8 @@ function fakePlatform() {
       Layer.mergeAll(
         Prisma.AppProvider(),
         Prisma.DeploymentProvider(),
-        environmentVariableProvider(),
-        SentKeysProvider(),
+        providerForDeletingOldVariableRows(),
+        SentVariableNamesProvider(),
         GeneratedParamProvider(),
       ),
     ),
@@ -467,18 +467,20 @@ test('a changed value replaces only the service that reads it, and its new deplo
   ]);
 });
 
-test("a removed dependency's keys are sent as null on that deploy and on every later one", async () => {
-  const { variablesSentTo, stack } = fakePlatform();
+test("a removed dependency's keys are sent as null on that deploy and on every later one, and an unchanged deploy after it replaces nothing", async () => {
+  const { createsFor, variablesSentTo, stack } = fakePlatform();
 
   await runScratch(stack.deploy(program({ billing: true })));
   await runScratch(stack.deploy(program()));
+  await runScratch(stack.deploy(program()));
+  expect(createsFor('shop.web')).toHaveLength(2);
   await runScratch(stack.deploy(program({}, artifact, changedArtifact)));
 
-  const retired = { ...webVariables, COMPOSER_SHOP_WEB_BILLING_URL: null };
+  const noLongerSent = { ...webVariables, COMPOSER_SHOP_WEB_BILLING_URL: null };
   expect(variablesSentTo('shop.web')).toEqual([
     { ...webVariables, COMPOSER_SHOP_WEB_BILLING_URL: 'https://billing.example' },
-    retired,
-    retired,
+    noLongerSent,
+    noLongerSent,
   ]);
 });
 
@@ -526,7 +528,7 @@ test('a service with more than 50 variables is refused before any request', asyn
 
   expect(Exit.isFailure(exit)).toBe(true);
   expect(String(Exit.isFailure(exit) ? exit.cause : '')).toContain(
-    'the service "shop.web" needs 51 variables, but Prisma Cloud stores at most 50 on one service',
+    'The service "shop.web" needs 51 variables, but Prisma Cloud stores at most 50 on one service',
   );
   expect(platform.requests).toEqual([]);
 });

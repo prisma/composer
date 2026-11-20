@@ -2,6 +2,7 @@
 
 import * as Prisma from '@alchemy.run/prisma';
 import type { ServiceLowering } from '@internal/core/deploy';
+import { CliStructuredError } from '@internal/foundation/errors';
 import { describeDocument, type PlatformMarkerUse } from '@internal/input-document';
 import { ARTIFACT_CONTENT_TYPE, appAfter, packageComputeArtifact } from '@internal/lowering';
 import * as Output from 'alchemy/Output';
@@ -18,7 +19,7 @@ import {
 import { RESERVED_PROVIDER_PARAMS } from '../provider-params.ts';
 import { provisionedEdges } from '../provisioned-edges.ts';
 import { resourceId } from '../resource-ids.ts';
-import { SentKeys } from '../sent-keys-resource.ts';
+import { SentVariableNames } from '../sent-variable-names-resource.ts';
 import { encode, type InputDocumentRow, paramEntries, serializeInput } from '../serializer.ts';
 import {
   asOwnRow,
@@ -54,16 +55,14 @@ export interface ComputeProvisioned {
 }
 
 /** A service variable's value: `Redacted` keeps it out of logs, though Alchemy writes it to deploy state in plain text. It may still be an unresolved deploy-time reference. */
-export type ServiceVariableValue =
-  | Redacted.Redacted<string>
-  | Output.Output<Redacted.Redacted<string>>;
+type ServiceVariableValue = Redacted.Redacted<string> | Output.Output<Redacted.Redacted<string>>;
 
 /** compute's serialize → deploy handoff. */
 export interface ComputeSerialized {
   /** Every `COMPOSER_` key the service reads at boot, as its value or `null`. */
-  readonly variables: Readonly<Record<string, ServiceVariableValue | null>>;
-  /** What the deployment is created with: `variables`, plus `null` for every key an earlier deploy sent and this one does not. */
-  readonly deploymentVariables: Output.Output<Record<string, Redacted.Redacted<string> | null>>;
+  readonly bootVariables: Readonly<Record<string, ServiceVariableValue | null>>;
+  /** What the create-deployment request carries: `bootVariables`, plus `null` for every name Composer no longer sends. */
+  readonly requestVariables: Output.Output<Record<string, Redacted.Redacted<string> | null>>;
   /** Platform variables the service reads and Composer does not write; each joins the triggers as `<name>:updatedAt`. */
   readonly platformVariables: readonly string[];
   readonly port: number;
@@ -119,9 +118,9 @@ function isComputeProvisioned(value: unknown): value is ComputeProvisioned {
   return typeof value === 'object' && value !== null && 'endpointDomain' in value;
 }
 
-function withRetiredKeysDeleted(
+function withNamesNoLongerSentDeleted(
   variables: Readonly<Record<string, ServiceVariableValue | null>>,
-  sent: Output.Output<readonly string[]>,
+  everSent: Output.Output<readonly string[]>,
 ): Output.Output<Record<string, Redacted.Redacted<string> | null>> {
   const resolved: Record<string, Redacted.Redacted<string> | null> = {};
   const pending: Output.Output<readonly [string, Redacted.Redacted<string>]>[] = [];
@@ -129,8 +128,8 @@ function withRetiredKeysDeleted(
     if (Output.isOutput(value)) pending.push(Output.map(value, (v) => [key, v] as const));
     else resolved[key] = value;
   }
-  return Output.map(Output.all(sent, Output.all(...pending)), ([sentKeys, entries]) => ({
-    ...Object.fromEntries(sentKeys.map((key) => [key, null])),
+  return Output.map(Output.all(everSent, Output.all(...pending)), ([names, entries]) => ({
+    ...Object.fromEntries(names.map((name) => [name, null])),
     ...resolved,
     ...Object.fromEntries(entries),
   }));
@@ -142,10 +141,17 @@ function checkServiceVariableCount(
 ): void {
   const count = Object.values(variables).filter((value) => value !== null).length;
   if (count <= SERVICE_VARIABLE_LIMIT) return;
-  throw new Error(
-    `prisma-cloud: the service "${address}" needs ${count} variables, but Prisma Cloud stores at ` +
-      `most ${SERVICE_VARIABLE_LIMIT} on one service. Split the service, or give it fewer ` +
-      'dependencies or generated values.',
+  throw new CliStructuredError(
+    'DEPLOY.SERVICE_VARIABLE_LIMIT',
+    `The service "${address}" needs ${count} variables, but Prisma Cloud stores at most ${SERVICE_VARIABLE_LIMIT} on one service.`,
+    {
+      why:
+        `Composer sends one variable for each of the service's params, dependency connection values and generated values, ` +
+        `and the app declares ${count} for "${address}". No resource has been created, changed or deleted; ` +
+        "the branch's application topology has already been replaced and the build recorded.",
+      fix: `Give "${address}" fewer dependencies or generated values, for example by splitting it into two services.`,
+      meta: { address, count, limit: SERVICE_VARIABLE_LIMIT },
+    },
   );
 }
 
@@ -202,12 +208,12 @@ export function computeDescriptor(
         }
         const svc = node;
         // A key left out keeps the value an earlier deploy stored on the service, so every key boot reads is sent, as `null` when it has no value.
-        const variables: Record<string, ServiceVariableValue | null> = {};
+        const bootVariables: Record<string, ServiceVariableValue | null> = {};
 
         for (const d of paramEntries(svc)) {
           const value =
             d.owner === 'service' ? config.service[d.name] : config.inputs[d.owner.input]?.[d.name];
-          variables[configKey(address, d)] =
+          bootVariables[configKey(address, d)] =
             value === undefined ? null : envValue(encode(d.owner, value));
         }
 
@@ -225,29 +231,13 @@ export function computeDescriptor(
               : (yield* GeneratedParam(resourceId(address, 'generated', leaf.path), {
                   bytes: leaf.bytes,
                 }).pipe(fromLegacyId(legacyGeneratedParamId(app, address, leaf.path)))).value;
-          variables[leaf.varName] = envValue(value);
+          bootVariables[leaf.varName] = envValue(value);
         }
 
-        // Provider side (ADR-0031). Compute never names a brand — it looks
-        // one up. Two kinds of registered entries:
-        //
-        //  · Edge-derived (`value(refs)`) — driven by the PROVIDER, not by
-        //    its edges: asked even with no inbound edge for that brand,
-        //    because "no edges" and "no var" are not the same thing — an
-        //    absent var reads as "never provisioned" (local dev, tests), so
-        //    a deployed provider with zero wired consumers must still be
-        //    able to emit a deny-everything value. Whether an empty set
-        //    means deny-all or emit-nothing is that param's own call, so it
-        //    may return undefined to send `null`. The expose check is
-        //    main's and stays for these: a service that exposes nothing
-        //    can never be any binding's provider.
-        //
-        //  · Service-derived (`valueForService(provisioned, address)`) —
-        //    derived from this service's OWN provisioned attributes (e.g.
-        //    its origin), so EVERY compute service is asked, exposing or
-        //    not; the expose check does not apply.
+        // Reserved provider params (ADR-0031): an edge-derived one is asked only of a service that exposes something,
+        // a service-derived one (such as the origin) of every service; one with no value is sent as `null`.
         for (const entry of RESERVED_PROVIDER_PARAMS) {
-          variables[configKey(address, { owner: 'service', name: entry.name })] = null;
+          bootVariables[configKey(address, { owner: 'service', name: entry.name })] = null;
         }
         const exposes = svc.expose !== undefined && Object.keys(svc.expose).length > 0;
         const refsByBrand = new Map<symbol, unknown[]>();
@@ -273,12 +263,13 @@ export function computeDescriptor(
           const value = Output.isOutput(raw)
             ? Output.map(raw, (v) => encode('service', v))
             : encode('service', raw);
-          variables[configKey(address, { owner: 'service', name: entry.name })] = envValue(value);
+          bootVariables[configKey(address, { owner: 'service', name: entry.name })] =
+            envValue(value);
         }
 
-        checkServiceVariableCount(address, variables);
-        const sent = yield* SentKeys(resourceId(address, 'sent-keys'), {
-          keys: Object.keys(variables).sort(),
+        checkServiceVariableCount(address, bootVariables);
+        const everSent = yield* SentVariableNames(resourceId(address, 'sent-variable-names'), {
+          names: Object.keys(bootVariables).sort(),
         });
 
         // Carries the resolved port to deploy(); falls back to 3000 if unset.
@@ -286,8 +277,8 @@ export function computeDescriptor(
         // only place the fallback belongs — from here on `port` is a number.
         const port = typeof config.service['port'] === 'number' ? config.service['port'] : 3000;
         return {
-          variables,
-          deploymentVariables: withRetiredKeysDeleted(variables, sent.keys),
+          bootVariables,
+          requestVariables: withNamesNoLongerSentDeleted(bootVariables, everSent.names),
           platformVariables: inputRow !== undefined ? sortedMarkerNames(inputRow.markers) : [],
           port,
           ...(inputRow !== undefined ? { input: inputRow } : {}),
@@ -318,9 +309,6 @@ export function computeDescriptor(
           .flatMap((edge) => Object.values(lowered.get(edge.from) ?? {}))
           .filter(Output.isOutput);
         const { platformVariableVersion } = preflightView(preflight);
-        // The member name is historical: under `prisma dev` it holds an HMAC
-        // of the value, and renaming it would redeploy every hosted
-        // deployment once.
         const triggers = Object.fromEntries(
           serialized.platformVariables.map((name) => [
             `${name}:updatedAt`,
@@ -340,7 +328,7 @@ export function computeDescriptor(
           // A changed platform variable replaces the deployment: the platform
           // copies variables into a deployment only when it is created.
           triggers,
-          variables: serialized.deploymentVariables,
+          variables: serialized.requestVariables,
           // Route to the port the app actually binds (the service's `port`
           // param, resolved by serialize) — not a hardcoded constant.
           portMapping: { http: serialized.port },
@@ -384,7 +372,7 @@ export function computeDescriptor(
           );
         }
         const rows: Record<string, ServiceVariableValue> = {};
-        for (const [key, value] of Object.entries(serialized.variables)) {
+        for (const [key, value] of Object.entries(serialized.bootVariables)) {
           if (value !== null) rows[key] = value;
         }
         if (serialized.input !== undefined) {

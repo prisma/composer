@@ -1,39 +1,38 @@
 /**
- * The `SentKeys` Alchemy resource: every key name a service's deployments have
- * been sent, kept in deploy state so a key the service stops sending can be
- * sent as `null`, which deletes it from the service. It holds names, never
- * values. Its output changes only when its input names a key it has not seen.
+ * The `SentVariableNames` Alchemy resource: every variable name a service's deployments have been sent, kept in
+ * deploy state so a name Composer no longer sends can be sent as `null`, which deletes it from the service.
  */
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 
-export interface SentKeysProps {
-  /** This deploy's key names, sorted. */
-  readonly keys: readonly string[];
+export interface SentVariableNamesProps {
+  /** This deploy's variable names, sorted. */
+  readonly names: readonly string[];
 }
 
-export interface SentKeysAttributes {
-  /** Every key name this resource has been given, sorted. */
-  readonly keys: readonly string[];
+export interface SentVariableNamesAttributes {
+  /** Every variable name this resource has been given, sorted. */
+  readonly names: readonly string[];
 }
 
-export type SentKeys = Resource<'PrismaCloud.SentKeys', SentKeysProps, SentKeysAttributes>;
+export type SentVariableNames = Resource<
+  'PrismaCloud.SentVariableNames',
+  SentVariableNamesProps,
+  SentVariableNamesAttributes
+>;
 
-export const SentKeys = Resource<SentKeys>('PrismaCloud.SentKeys');
+export const SentVariableNames = Resource<SentVariableNames>('PrismaCloud.SentVariableNames');
 
-export function sentKeysUnion(
-  recorded: readonly string[] | undefined,
-  sent: readonly string[],
-): SentKeysAttributes {
-  return { keys: [...new Set([...(recorded ?? []), ...sent])].sort() };
+function union(recorded: readonly string[] | undefined, sent: readonly string[]) {
+  return { names: [...new Set([...(recorded ?? []), ...sent])].sort() };
 }
 
-export const sentKeysProviderService: Provider.ProviderService<SentKeys> = {
+const sentVariableNamesProviderService: Provider.ProviderService<SentVariableNames> = {
   list: () => Effect.succeed([]),
-  reconcile: ({ news, output }) => Effect.sync(() => sentKeysUnion(output?.keys, news.keys)),
+  reconcile: ({ news, output }) => Effect.sync(() => union(output?.names, news.names)),
   delete: () => Effect.void,
 };
 
-export const SentKeysProvider = () =>
-  Provider.effect(SentKeys, Effect.succeed(sentKeysProviderService));
+export const SentVariableNamesProvider = () =>
+  Provider.effect(SentVariableNames, Effect.succeed(sentVariableNamesProviderService));

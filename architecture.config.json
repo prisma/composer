@@ -349,7 +349,7 @@
       "plane": "control"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/sent-keys-resource.ts",
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/sent-variable-names-resource.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "control"

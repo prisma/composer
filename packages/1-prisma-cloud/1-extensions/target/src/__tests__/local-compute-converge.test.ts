@@ -22,7 +22,7 @@ import { compute } from '../compute.ts';
 import { computeDescriptor } from '../descriptors/compute.ts';
 import { GeneratedParamProvider } from '../generated-param-resource.ts';
 import { localTargetDescriptor } from '../local-target/descriptor.ts';
-import { SentKeysProvider } from '../sent-keys-resource.ts';
+import { SentVariableNamesProvider } from '../sent-variable-names-resource.ts';
 
 const APP = 'devapp';
 const savedEmulatorsDir = process.env[EMULATORS_DIR_ENV];
@@ -97,7 +97,7 @@ describe.skipIf(process.platform === 'win32')(
       const container = await descriptor.container.ensure({ appName: APP, environment: 'dev' });
       const providers = Layer.mergeAll(
         localTargetProviders({ container, devDir, plainVariableText: {}, namedSecrets: {} }),
-        SentKeysProvider(),
+        SentVariableNamesProvider(),
         GeneratedParamProvider(),
       );
       stack = scratchStack({ providers, dev: false }, 'local-converge');
