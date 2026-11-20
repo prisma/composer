@@ -45,7 +45,7 @@ Recorded 2026-11-18 at Will's request, as a later piece of work with its own pul
 
 **The fix found while proving piece B.** Read a service's `url` output from the service's stable domain, which is known at planning time. It is commit `dde80b76` on the branch `feat/compute-keeps-previous-versions`, in the worktree `.claude/worktrees/compute-keep-versions`. After it, the first deploy still replaces the reading service's version once, and later unchanged deploys replace nothing.
 
-**Status, 2026-11-20.** Built on main as its own pull request, https://github.com/prisma/composer/pull/446, branch `fix/unchanged-deploy-keeps-consumer-version`. It does not need the Alchemy release.
+**Status, 2026-11-20.** Done. Merged to main on 2026-11-20 as https://github.com/prisma/composer/pull/446 (commit `8fd4fc34`). It did not need the Alchemy release.
 
 - A service's `url` comes from its `Prisma.App`'s endpoint domain. One function reads it, `endpointDomainOf`.
 - Reading the URL from the App removed the wait that made a producer go live before its consumers. The pull request keeps that order explicitly: the consumer deployment's `app` prop waits on every output of the nodes the service depends on (`appAfter` in the lowering package). A producer's `serviceId` comes from its deployment, and that is the output that waits for the promotion.
