@@ -24,6 +24,7 @@ import {
   type ProjectRegion,
   resolveContainer,
   suppliedClientOrigin,
+  withDeploySourceHeaders,
 } from '@internal/lowering';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
@@ -194,7 +195,8 @@ function clientFor(
   credentials: PrismaCloudCredentials | undefined,
   deps: ContainerDeps | undefined,
 ): ManagementApiClient | undefined {
-  return credentials?.client ?? deps?.client;
+  const supplied = credentials?.client;
+  return supplied !== undefined ? withDeploySourceHeaders(supplied) : deps?.client;
 }
 
 /** Runs against the injected client when there is one, and against an env-built one otherwise. */
