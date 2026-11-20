@@ -8,7 +8,7 @@ import * as Exit from 'effect/Exit';
 import * as Fiber from 'effect/Fiber';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import { data, fakeManagementApi, page } from '../../__tests__/fake-management-api.ts';
+import { data, fakeManagementApi, page } from '../../fake-management-api.ts';
 import { runScratch, scratchStack } from '../../scratch-stack.ts';
 import { appAfterEnvironment } from '../deployment-edge.ts';
 

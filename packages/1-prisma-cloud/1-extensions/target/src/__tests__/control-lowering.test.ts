@@ -3968,6 +3968,16 @@ describe("a compute service's input document travels in its artifact", () => {
     ]);
   });
 
+  test("reserve publishes the App's endpoint domain as the service's url", async () => {
+    const { reserve } = serviceDescriptorOf(prismaCloud({ workspaceId: 'ws_1' }), 'compute');
+    if (reserve === undefined) throw new Error('compute declares reserve');
+
+    const result = run<LoweredResult>(reserve(contextFor('Shop'), provisioned, serialize('Shop')));
+
+    expect(result.outputs['url']).toBe('https://shop.web.example');
+    expect(result.entities[0]).toHaveProperty('url', 'https://shop.web.example');
+  });
+
   test('reserve writes the input document as a preview variable on the branch of an environment that has one, as serialize does for its variables', async () => {
     const { reserve } = serviceDescriptorOf(prismaCloud({ workspaceId: 'ws_1' }), 'compute');
     if (reserve === undefined) throw new Error('compute declares reserve');

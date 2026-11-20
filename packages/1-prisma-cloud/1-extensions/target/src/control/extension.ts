@@ -24,7 +24,7 @@ import {
   prismaCloudContainerOf,
 } from '../container.ts';
 import { bucketDescriptor } from '../descriptors/bucket.ts';
-import { computeDescriptor } from '../descriptors/compute.ts';
+import { computeDescriptor, endpointDomainOf } from '../descriptors/compute.ts';
 import { postgresDescriptor } from '../descriptors/orm-postgres.ts';
 import { platformVariableDescriptor } from '../descriptors/platform-variable.ts';
 import { publicUrlDescriptor } from '../descriptors/public-url.ts';
@@ -163,15 +163,7 @@ const streamsApiKeyValue: ProviderParam['value'] = (refs) => {
  * than write a row origin() would trust. The raw string is JSON-encoded by
  * the descriptor's generic loop, like every other reserved provider param.
  */
-const selfOriginValue: ServiceProviderParam['valueForService'] = (provisioned, address) =>
-  Output.map(provisioned.endpointDomain, (v) => {
-    if (v === undefined) {
-      throw new Error(
-        `the App for "${address}" reported no endpoint domain at provision — cannot resolve the service's own origin (Management API predates the PRO-200 fix?)`,
-      );
-    }
-    return v;
-  });
+const selfOriginValue: ServiceProviderParam['valueForService'] = endpointDomainOf;
 
 /** The user-facing state descriptor: `state: prismaState()` in the `composer` section of `prisma.config.ts` (ADR-0017). */
 export const prismaState = (): StateDescriptor => ({

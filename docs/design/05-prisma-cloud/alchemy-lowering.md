@@ -227,7 +227,7 @@ flowchart TB
     Ss[App shop.storefront] --> Ds[Deployment shop.storefront.deployment]
     EVa -- resource ref --> Da
     EVs -- resource ref --> Ds
-    Da -- appEndpointDomain --> EVu["EnvironmentVariable(COMPOSER_SHOP_STOREFRONT_AUTH_URL)"]
+    Sa -- appEndpointDomain --> EVu["EnvironmentVariable(COMPOSER_SHOP_STOREFRONT_AUTH_URL)"]
     EVu -- resource ref --> Ds
   end
 ```
@@ -239,9 +239,7 @@ How the pieces map:
 - **Each service** lowers to an `App → Deployment` chain plus its own
   `Database → Connection`, whose url is written as that service's **explicitly
   named** variable — the same `serialize` path as any other config value.
-- **The connection** lowers to two edges: the producer's endpoint domain flows
-  into a named `EnvironmentVariable`, and that **whole resource flows into the
-  consumer's `Deployment`** through its `app` prop.
+- **The connection** lowers to two edges: the producer's App's endpoint domain flows into a named `EnvironmentVariable`, and that **whole resource flows into the consumer's `Deployment`** through its `app` prop. The domain comes from the App, not the Deployment: the Deployment is promoted on every deploy, so its domain is unknown while planning, and a reading service's deployment, whose triggers hold the value, would be replaced on every deploy. Because the App's domain is known, an unchanged reading service keeps its deployment when the service it reads is redeployed.
 - Every `EnvironmentVariable` a Deployment boots with is threaded into its
   `app` — database URLs and connection URLs alike — so the deployment
   depends on its config being written first.

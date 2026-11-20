@@ -32,7 +32,7 @@ import * as ConfigProvider from 'effect/ConfigProvider';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import { data, fakeManagementApi, page } from '../../__tests__/fake-management-api.ts';
+import { data, fakeManagementApi, page } from '../../fake-management-api.ts';
 import { stateLayerAgainst } from '../layer.ts';
 import { migrateLegacyResourceState } from '../legacy-resources.ts';
 import { FakeStateApi } from './fake-state-api.ts';

@@ -670,7 +670,7 @@ type Outputs = Readonly<Record<string, unknown>>
 // `url` is present only when the descriptor declares the address publicly
 // reachable — a connection string is never a `url` (no core-level rule is safe:
 // `url` on compute is an endpoint, on postgres it would be a DSN). A descriptor
-// constructing one holds `deployment.appEndpointDomain` — an Output<T>, not a T,
+// constructing one holds the App's `appEndpointDomain` — an Output<T>, not a T,
 // because the stack effect runs before Alchemy applies — so construction sites
 // traffic in `Input<DeployedEntity>` (LoweredResult.entities above); apply
 // resolves them before any reader sees them.
@@ -1098,7 +1098,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
             const svc = yield* Prisma.App(address, {
               project: projectIdOf(application), displayName: address, regionId: o.region ?? "us-east-1", logicalId: address,
             })
-            return { serviceId: svc.appId, projectId: projectIdOf(application) }  // : ComputeProvisioned
+            return { serviceId: svc.appId, projectId: projectIdOf(application), endpointDomain: svc.appEndpointDomain }  // : ComputeProvisioned
           }),
 
         // Encode the typed Config into the runtime environment — one env var per
@@ -1136,8 +1136,11 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         // serialize's env-var records, so the deployment depends on them — the
         // ordering edge that kills PRO-211. Returns a LoweredResult: `url` IS
         // published here — a Compute service's deployed URL is a public endpoint,
-        // and this descriptor is the only party that knows it. Both fields are
-        // still Output refs until apply.
+        // and this descriptor is the only party that knows it. It is the App's
+        // domain, not the deployment's: the deployment is promoted on every
+        // deploy, so its domain is unknown while planning, and every service
+        // reading the URL would get a new deployment. Both fields are still
+        // Output refs until apply.
         deploy: ({ address }, provisioned, artifact, serialized) =>
           Effect.gen(function* () {
             const deployment = yield* Prisma.Deployment(`${address}.deployment`, {
@@ -1147,8 +1150,8 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
               portMapping: { http: serialized.port }, start: true, promote: true,
             })
             return {
-              outputs: { url: deployment.appEndpointDomain, projectId: provisioned.projectId },
-              entities: [{ kind: "compute-service", id: provisioned.serviceId, url: deployment.appEndpointDomain }],
+              outputs: { url: provisioned.endpointDomain, projectId: provisioned.projectId, serviceId: deployment.appId },
+              entities: [{ kind: "compute-service", id: provisioned.serviceId, url: provisioned.endpointDomain }],
             }
           }),
       },

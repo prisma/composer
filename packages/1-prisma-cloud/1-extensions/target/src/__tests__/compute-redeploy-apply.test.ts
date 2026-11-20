@@ -1,16 +1,19 @@
 /** Two compute services, one reading the other's URL, deployed twice under the real Alchemy apply engine and the real `Prisma.App`, `Prisma.Deployment` and `Prisma.EnvironmentVariable` providers, against a fake Management API. */
 import { expect, test } from 'bun:test';
+import * as path from 'node:path';
 import * as Prisma from '@alchemy.run/prisma';
-import { Credentials, Retry } from '@distilled.cloud/prisma';
 import { dependency, string } from '@internal/core';
 import type { LowerContext } from '@internal/core/deploy';
-import { runScratch, scratchStack } from '@internal/lowering/scratch-stack';
+import {
+  data,
+  fakeManagementApi,
+  page,
+  runScratch,
+  scratchStack,
+} from '@internal/lowering/scratch-stack';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import * as HttpClient from 'effect/http/HttpClient';
-import * as HttpClientResponse from 'effect/http/HttpClientResponse';
 import * as Layer from 'effect/Layer';
-import * as Redacted from 'effect/Redacted';
 import { compute } from '../compute.ts';
 import { computeDescriptor } from '../descriptors/compute.ts';
 
@@ -24,6 +27,7 @@ interface FakePlatform {
   /** The App id of every deployment ever created, in order; a deleted deployment stays listed. */
   readonly created: unknown[];
   readonly variables: Map<string, Record<string, unknown>>;
+  readonly values: Map<string, unknown>;
 }
 
 function record(body: unknown): Record<string, unknown> {
@@ -31,13 +35,10 @@ function record(body: unknown): Record<string, unknown> {
 }
 
 function respond(platform: FakePlatform, method: string, url: URL, body: unknown): Response {
-  const data = (value: unknown) => Response.json({ data: value });
-  const page = (values: unknown[]) =>
-    Response.json({ data: values, pagination: { hasMore: false, nextCursor: null } });
   const path = url.pathname;
   const sent = record(body);
 
-  if (url.hostname === 'upload.prisma.test' && method === 'PUT') return new Response(null);
+  if (method === 'PUT' && path.startsWith('/upload/')) return new Response(null);
 
   if (method === 'GET' && path === `/v1/projects/${PROJECT_ID}/branches`) {
     return page([
@@ -89,10 +90,6 @@ function respond(platform: FakePlatform, method: string, url: URL, body: unknown
   if (serviceMatch !== null && service !== undefined) {
     const action = serviceMatch[2];
     if (method === 'GET' && action === undefined) return data(service);
-    if (method === 'PATCH' && action === undefined) {
-      Object.assign(service, sent);
-      return data(service);
-    }
     if (method === 'GET' && action === '/deployments') {
       return page(
         [...platform.deployments.values()].filter((d) => d['serviceId'] === service['id']),
@@ -112,7 +109,7 @@ function respond(platform: FakePlatform, method: string, url: URL, body: unknown
         createdAt: CREATED_AT,
       };
       platform.deployments.set(id, deployment);
-      return data({ ...deployment, uploadUrl: `https://upload.prisma.test/${id}` });
+      return data({ ...deployment, uploadUrl: `https://api.prisma.test/upload/${id}` });
     }
     if (method === 'POST' && action === '/promote') {
       service['latestDeploymentId'] = sent['deploymentId'];
@@ -159,13 +156,17 @@ function respond(platform: FakePlatform, method: string, url: URL, body: unknown
       updatedAt: CREATED_AT,
     };
     platform.variables.set(id, variable);
+    platform.values.set(String(sent['key']), sent['value']);
     return data(variable);
   }
   const variable = platform.variables.get(
     path.match(/^\/v1\/environment-variables\/([^/]+)$/)?.[1] ?? '',
   );
   if (variable !== undefined && method === 'GET') return data(variable);
-  if (variable !== undefined && method === 'PATCH') return data(variable);
+  if (variable !== undefined && method === 'PATCH') {
+    platform.values.set(String(variable['key']), sent['value']);
+    return data(variable);
+  }
 
   return Response.json(
     { error: { code: 'unhandled', message: `${method} ${path}` } },
@@ -179,15 +180,10 @@ function fakePlatform() {
     deployments: new Map(),
     created: [],
     variables: new Map(),
+    values: new Map(),
   };
-  const http = HttpClient.make((request) =>
-    Effect.sync(() => {
-      const url = new URL(request.url);
-      const sent = request.body;
-      const text = sent._tag === 'Uint8Array' ? new TextDecoder().decode(sent.body) : '';
-      const response = respond(platform, request.method, url, text ? JSON.parse(text) : undefined);
-      return HttpClientResponse.fromWeb(request, response);
-    }),
+  const api = fakeManagementApi(({ method, path, body }) =>
+    Effect.sync(() => respond(platform, method, new URL(path, 'https://api.prisma.test'), body)),
   );
   const providers = Layer.effect(
     Prisma.Providers,
@@ -200,21 +196,17 @@ function fakePlatform() {
         Prisma.EnvironmentVariableProvider(),
       ),
     ),
-    Layer.provideMerge(
-      Layer.mergeAll(
-        Layer.succeed(HttpClient.HttpClient, http),
-        Layer.succeed(
-          Credentials,
-          Effect.succeed({
-            apiToken: Redacted.make('fake-token'),
-            apiBaseUrl: 'https://api.prisma.test',
-          }),
-        ),
-        Layer.succeed(Retry.Retry, Retry.makeDefault),
-      ),
-    ),
+    Layer.provideMerge(api),
   );
-  return { platform, options: { providers, dev: false } };
+  const createdFor = (address: string) => {
+    const service = [...platform.services.values()].find((s) => s['logicalId'] === address);
+    return platform.created.filter((serviceId) => serviceId === service?.['id']);
+  };
+  return {
+    platform,
+    createdFor,
+    stack: scratchStack({ providers, dev: false }, 'compute-redeploy'),
+  };
 }
 
 const build = {
@@ -245,9 +237,9 @@ const application = {
 };
 // The fake platform never unpacks an artifact, so any file serves as one.
 const artifact = { path: import.meta.path, sha256: 'sha-artifact' };
+const changedArtifact = { path: path.join(import.meta.dir, '..', 'compute.ts'), sha256: 'sha-2' };
 
-/** The two services' lowering, as core's loop runs it: `web` reads `auth`'s `url` output. */
-function program() {
+function program(authArtifact = artifact) {
   return Effect.gen(function* () {
     const ctxOf = (address: string, node: unknown) =>
       ({ address, node, graph, application }) as unknown as LowerContext;
@@ -259,7 +251,12 @@ function program() {
       service: { port: 3000 },
       inputs: {},
     });
-    const deployed = yield* descriptor.deploy(authCtx, authProvisioned, artifact, authSerialized);
+    const deployed = yield* descriptor.deploy(
+      authCtx,
+      authProvisioned,
+      authArtifact,
+      authSerialized,
+    );
     const webSerialized = yield* descriptor.serialize(webCtx, webProvisioned, {
       service: { port: 3000 },
       inputs: { auth: { url: deployed.outputs['url'] } },
@@ -269,17 +266,24 @@ function program() {
 }
 
 test("an unchanged deploy keeps the deployment of a service that reads another service's url", async () => {
-  const { platform, options } = fakePlatform();
-  const stack = scratchStack(options, 'compute-redeploy');
-  const createdFor = (address: string) => {
-    const service = [...platform.services.values()].find((s) => s['logicalId'] === address);
-    return platform.created.filter((serviceId) => serviceId === service?.['id']);
-  };
+  const { platform, createdFor, stack } = fakePlatform();
 
   await runScratch(stack.deploy(program()));
   expect(createdFor('shop.auth')).toHaveLength(1);
   expect(createdFor('shop.web')).toHaveLength(1);
+  expect(platform.values.get('COMPOSER_SHOP_WEB_AUTH_URL')).toBe('https://svc_1.cdg.prisma.build');
 
   await runScratch(stack.deploy(program()));
+  expect(createdFor('shop.auth')).toHaveLength(1);
+  expect(createdFor('shop.web')).toHaveLength(1);
+});
+
+test('a new artifact for the service that is read replaces its deployment and keeps the reading service', async () => {
+  const { createdFor, stack } = fakePlatform();
+
+  await runScratch(stack.deploy(program()));
+  await runScratch(stack.deploy(program(changedArtifact)));
+
+  expect(createdFor('shop.auth')).toHaveLength(2);
   expect(createdFor('shop.web')).toHaveLength(1);
 });

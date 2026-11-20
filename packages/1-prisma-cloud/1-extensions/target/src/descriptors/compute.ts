@@ -32,6 +32,7 @@ import {
   logicalIdProp,
   projectIdOf,
   type ResolvedCloudOptions,
+  type ServiceProvisionedAttributes,
   validatePlatformName,
   variableClassAndBranch,
 } from './shared.ts';
@@ -53,10 +54,7 @@ function declaresNoListening(node: unknown): boolean {
 export interface ComputeProvisioned {
   readonly serviceId: Output.Output<string>;
   readonly projectId: string;
-  /** The platform-assigned public origin domain — resolves to `undefined` only
-   *  in the narrow provider-response gap the origin param's deploy-side value
-   *  function enforces away (control.ts's `selfOriginValue`): every other
-   *  reader may treat it as present. */
+  /** The platform-assigned public origin domain. Read it through `endpointDomainOf`, which fails the deploy when the platform reported none. */
   readonly endpointDomain: Output.Output<string | undefined>;
 }
 
@@ -111,20 +109,16 @@ function originOf(
         `address — known services: ${known}.`,
     );
   }
-  return Output.map(provisioned.endpointDomain, (v) => {
-    if (v === undefined) {
-      throw new Error(
-        `the App for "${target}" reported no endpoint domain — cannot resolve serviceOrigin("${target}") for "${consumer}".`,
-      );
-    }
-    return v;
-  });
+  return endpointDomainOf(provisioned, target);
 }
 
-function urlOf(provisioned: ComputeProvisioned): Output.Output<string> {
+export function endpointDomainOf(
+  provisioned: ServiceProvisionedAttributes,
+  address: string,
+): Output.Output<string> {
   return Output.map(provisioned.endpointDomain, (domain) => {
     if (domain === undefined) {
-      throw new Error('the App reported no endpoint domain for the service.');
+      throw new Error(`the App for "${address}" reported no endpoint domain.`);
     }
     return domain;
   });
@@ -403,19 +397,13 @@ export function computeDescriptor(
           start: true,
           promote: true,
         }).pipe(fromLegacyId(legacyNodeResourceId(app, address, 'deploy')));
-        // `url` IS published here: a Compute service's deployed URL is a
-        // public endpoint, and this descriptor is the only party that knows
-        // that. It is the App's endpoint domain, known from the App's create,
-        // not the deployment's: the deployment promotes itself on every deploy,
-        // so its domain is unresolved while planning, and a consumer whose
-        // environment holds this URL would get a new deployment every time.
-        // `serviceId` does wait for the promotion, because the custom domain
-        // that reads it is bound to the live deployment.
-        const url = urlOf(provisioned);
+        const url = endpointDomainOf(provisioned, address);
         return {
           outputs: {
+            // The App's domain: one that waits for the promotion is unknown while planning, which replaces every reader's deployment.
             url,
             projectId: provisioned.projectId,
+            // Waits for the promotion, because a custom domain is bound to the live version.
             serviceId: deployment.appId,
           },
           entities: [
@@ -431,10 +419,8 @@ export function computeDescriptor(
 
     // ADR-0056: a service that runs its build adapter's dev server under
     // `prisma dev` has no artifact. What `deploy` returns, with the
-    // `Deployment` removed: the URL comes from the App, which locally is the
-    // same `http://localhost:<port>` the Deployment would report, so
-    // dependents' rows do not change between a served and an assembled run.
-    // With no artifact to carry it, the input document is a variable.
+    // `Deployment` removed. With no artifact to carry it, the input document
+    // is a variable.
     reserve: ({ address, application, graph }, provisioned, serialized) =>
       Effect.gen(function* () {
         const { input } = serialized;
@@ -446,7 +432,7 @@ export function computeDescriptor(
             ...variableClassAndBranch(application),
           }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyInputKey(graph.root.id, address))));
         }
-        const url = urlOf(provisioned);
+        const url = endpointDomainOf(provisioned, address);
         return {
           outputs: { url, projectId: provisioned.projectId, serviceId: provisioned.serviceId },
           entities: [
