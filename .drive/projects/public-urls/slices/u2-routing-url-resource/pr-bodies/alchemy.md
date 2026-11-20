@@ -1,104 +1,104 @@
-Adds `Prisma.RoutingUrl`, a hostname that serves a Prisma app, saved before its DNS exists, and `Prisma.DomainOwnership`, which proves a workspace owns a domain.
+Adds `Prisma.RoutingUrl`, a hostname that serves a Prisma app and can be saved before its DNS exists, moves `Prisma.Website` onto it, and deprecates `Prisma.CustomDomain`.
 
 ```ts
 const url = yield* Prisma.RoutingUrl("api", {
   app: api,
   hostname: "api.example.com",
+  dns: Cloudflare.DNS.Adapter(),
 });
-// url.status: "pending"
-// url.firstUnmetCondition: "ownershipVerified"
-// url.records: TXT _prisma-verification.api.example.com, CNAME api.example.com -> switchboard.{region}.prisma.build
-// url.setupUrl: the Console page that shows what to do next
+// publishes TXT _prisma-verification.api.example.com and CNAME api.example.com -> switchboard.{region}.prisma.build
+// url.status: "pending", then "active" once Prisma has found both records
 ```
+
+Without `dns` the deploy still succeeds, and `url.records` lists what to publish by hand.
+
+Why now: Prisma has deprecated its custom domain routes (`/v1/services/{id}/domains`, `/v1/domains/{id}` and the `/v1/apps/{appId}/domains` aliases) and deletes them about 2026-12-21. `Prisma.CustomDomain` and every `Prisma.Website` with a `domain` call them today.
+
+This replaces #2698 and #2701. Both were written when Prisma refused to create a domain ownership until its TXT record resolved, so they treat a successful create as proof. Prisma now always creates it as `unverified`, so that code would report an unproved domain as proved.
 
 ### `Prisma.RoutingUrl`
 
-The deploy creates the platform row at once, with no DNS, and succeeds. Prisma makes the row `active` once the records resolve. Prisma also creates the `unverified` domain ownership the TXT record proves; the resource never reads, records or deletes it.
+The deploy creates the row in Prisma at once and succeeds. Prisma makes the row `active` once the TXT record and the CNAME resolve. Prisma also creates the domain ownership for the exact hostname; the resource never creates, verifies or deletes one. That is the per-hostname TXT record, with no shared ownership for stacks to fight over.
 
-1. **Identity is the `logicalId`**, which defaults to the resource's name. With no stored id, the row with that `logicalId` on the service's Branch is this resource's. A row Prisma made for the same service and hostname with no `logicalId` (as Prisma's backfill of existing custom domains does) is taken over by writing its `logicalId`.
+1. **Identity is the `logicalId`**, which defaults to the resource's name. With no stored id, the row with that `logicalId` on the service's Branch is this resource's. A row for the same service and hostname with no `logicalId` is taken over by writing its `logicalId`; Prisma recorded every existing custom domain as such a row on 2026-11-17.
 2. **Another row on the Branch with the hostname** fails the deploy with `RoutingUrlHostnameTaken`, which names it.
-3. **Changes** to the hostname, the service or the `logicalId` are sent with one `PATCH`. A redeploy with nothing changed sends none.
-4. **A hostname change on an `active` row** is refused before any `PATCH`, with `RoutingUrlHostnameChangeRefused`, until the new hostname has a verified domain ownership (exact or wildcard) and points at the switchboard at every authoritative nameserver. A nameserver passes when it answers the CNAME to the switchboard, or, for a hostname with no CNAME (an apex behind CNAME flattening, ALIAS or ANAME), A or AAAA answers that include a switchboard address. A CNAME to any other name does not pass, whatever addresses it leads to, because Prisma uses addresses only for a hostname with no CNAME. The error names both hostnames and the TXT and CNAME records to publish, and its `switchboardDns` field says `absent` (not published) or `unknown` (DNS could not be checked from this machine), so a caller need not read the message. When the domain ownership is not verified, DNS is checked once and the deploy fails at once; otherwise the check waits about a minute for the records to appear. Prisma itself would accept the change and stop serving the old hostname at once. Two known limits. A RoutingUrl in another workspace holding the new hostname is not seen, so the change goes through and the new hostname stays `pending` behind `heldBy`. And to find an apex's own zone the check asks this machine's resolver about the new hostname; if that resolver caches "no such name" and Prisma's lookups share its cache, Prisma may not see newly published records until the zone's negative TTL passes.
-5. **Prisma's refusals** become typed errors: `RoutingUrlQuotaExceeded` and `RoutingUrlLogicalIdTaken` (409), `RoutingUrlInvalidHostname` and `RoutingUrlServiceOnAnotherBranch` (422). Distilled maps these to its generic `Conflict` and `UnprocessableEntity`, which keep only the message, and the platform's codes do not tell all four apart, so for now the resource tells them apart by the message. A test pins today's messages. Once the platform gives each case its own code, a Distilled patch types the four errors and the resource catches them by tag.
+3. **Changes** to the hostname, the service or the `logicalId` are sent as one `PATCH`. A redeploy with nothing changed sends none.
+4. **A hostname change on an `active` row is checked first.** Prisma itself would accept the change and stop serving the old hostname at once, so the resource refuses it, before any `PATCH`, with `RoutingUrlHostnameChangeRefused`, unless the new hostname can serve:
+   - its ownership is proved: a `verified` domain ownership covers it (exact or wildcard), or its TXT record is seen at every authoritative nameserver, which is the evidence Prisma's own verification reads; and
+   - it points at the switchboard at every authoritative nameserver: a CNAME to the switchboard, or, for a hostname with no CNAME (an apex behind CNAME flattening, ALIAS or ANAME), A or AAAA answers that include a switchboard address. A CNAME to any other name does not pass.
+
+   The error names both hostnames and the records to publish. Its `ownership` and `switchboardDns` fields say whether each was seen, absent, or could not be checked from this machine, so a caller need not read the message.
+5. **Prisma's refusals are typed errors**, caught by the tag Distilled generates from the code in the response: `RoutingUrlQuotaExceeded` and `RoutingUrlLogicalIdTaken` (409), `RoutingUrlInvalidHostname`, `RoutingUrlServiceNotOnABranch` (create) and `RoutingUrlServiceOnAnotherBranch` (update) (422). Any other 409 or 422 is `RoutingUrlOperationFailed`.
 6. **Destroy** deletes the row and sends no domain ownership request.
 
-Migrating from `Prisma.CustomDomain`: to replace a CustomDomain with a RoutingUrl for the same hostname, keep the CustomDomain with `RemovalPolicy.retain()` or remove it in an earlier deploy. The RoutingUrl takes over the row the CustomDomain made, and the CustomDomain's delete would remove it. This applies once Prisma has recorded the custom domain as a RoutingUrl, which is true of every custom domain since Prisma's backfill on 2026-11-17. Both resources' JSDoc say so.
+#### `dns`
 
-Don't declare a `Prisma.DomainOwnership` for the same exact hostname as a `Prisma.RoutingUrl`: it takes over the domain ownership Prisma created for the RoutingUrl and deletes it on destroy. The JSDoc and the Compute guide say so.
+With a DNS adapter, the deploy publishes the two records and nothing else.
+
+- The records come from the workspace's verification endpoint and the service's switchboard address, which are the same on every deploy. They do not come from the row's `records` attribute: that lists only records still to publish, so a record would leave the list once Prisma saw it and the adapter would delete it.
+- Each hostname has its own record set, published before the row is saved. On a hostname change the new hostname's records exist when the check above runs, and the old hostname's records are removed only after the change is saved. A refused change leaves them published.
+- Both records are published DNS-only, also when the adapter proxies aliases, so Prisma can see the CNAME.
+- Nothing is published under `alchemy dev`.
+- A wildcard hostname is refused before anything is published.
+- Limits, all in the JSDoc and the Compute guide: a zone apex needs a DNS host that flattens a CNAME at the apex; the first deploy replaces an existing CNAME at the hostname without waiting for `active`, so a hostname moving from another host stops serving there first; removing `dns` removes the records; a record already published with the same value is treated as the resource's own and removed on destroy.
+
+A caller that builds its own provider list registers the resource with `Prisma.RoutingUrlResources` and `Prisma.RoutingUrlProvider()`. `Prisma.RoutingUrl` is a function, so it has no `.ref` or `.Provider`.
+
+Two known limits of the hostname-change check. A RoutingUrl in another workspace that holds the new hostname is not seen, so the change goes through and the new hostname stays `pending` behind `heldBy`. And the check does not cover the certificate, so the new hostname can be without TLS for a short time after an allowed change.
+
+### `Prisma.Website`
+
+A site with a `domain` declares one `Prisma.RoutingUrl` and passes `dns` through. It no longer declares a `Prisma.CustomDomain`.
+
+- **A site whose DNS is not ready now deploys** and reports `pending`, where it used to fail. The deploy does not wait for `active`.
+- **`site.domain` is the RoutingUrl.** `records` replaces `dnsRecords`, `status` and `firstUnmetCondition` replace `foundryStatus` and `failureReason`, and `routingUrlId` replaces `customDomainId`.
+- **Upgrading a deployed site keeps it serving.** The RoutingUrl takes over the row Prisma recorded for the site's custom domain, and `Prisma.CustomDomain`'s delete now skips a row a RoutingUrl has taken over. With `dns`, the site still declares the CNAME alias the released version declared, under its released id, so the upgrade updates that record in place; removing it would delete the CNAME on Cloudflare. It is declared with `adopt(true)`, because the RoutingUrl's record set publishes the same CNAME first, and with `RemovalPolicy.retain()`, so a later release can drop it. Both take the value from one source.
+- **Upgrade first, change the hostname in a later deploy.** Doing both at once creates a new row and deletes the old custom domain, with no check.
+
+### `Prisma.CustomDomain`
+
+Marked `@deprecated` with the date. Its only other changes: it moves to Distilled's `/v1/services` routes, reads the create's status from Distilled's new `httpStatus`, takes an optional `ownership`, and its delete skips a row taken over by a RoutingUrl. To replace one with a RoutingUrl for the same hostname, do it in one deploy. Nothing else in `packages/prisma/src` uses it.
 
 ### `Prisma.DomainOwnership`
 
+Proves a wildcard once, so RoutingUrls under it need no TXT record each.
+
 ```ts
-const ownership = yield* Prisma.DomainOwnership("example.com", {
+yield* Prisma.DomainOwnership("example.com", {
   project,
   domain: "*.example.com",
   dns: Cloudflare.DNS.Adapter(),
 });
-// ownership.status: "verified"; ownership.expiresAt: null
-yield* Prisma.CustomDomain("api", { app: api, hostname: "api.example.com", ownership });
 ```
 
-A deploy counts it as proved only when Prisma reports it `verified`. A `Prisma.Website` with `domain: { name, dns }` proves its own hostname the same way, in the same deploy.
+Carried over from #2701, with the proof corrected for how Prisma behaves now:
 
-This replaces #2698 and #2701. Both were written before Prisma changed how domain ownerships work:
+1. Look the domain ownership up, by stored id or by domain. Only `verified` counts as proved; `unverified` and `expiring` do not.
+2. Read the TXT record from `GET /v1/workspaces/{id}/domain-ownerships/verification` and ask every authoritative nameserver for it. If a nameserver answers without it, fail with `PrismaDomainOwnershipRequired`, which names the record, and create nothing.
+3. If the record is seen, or no nameserver could be reached, create the domain ownership if there is none and call verify until Prisma reports `verified`, up to 6 more times, 5 seconds apart. When DNS could not be checked from this machine, Prisma's own lookup decides.
 
-- Before: `POST /v1/workspaces/{id}/domain-ownerships` refused with a 422 `domain-ownership-required` until the TXT record resolved. #2701 retried the create on that error and treated a successful create as proof.
-- Now: the create always saves the domain ownership and returns it with `status: "unverified"` until a DNS lookup finds the record. A successful create proves nothing, so #2701 would report an unverified domain ownership as proved.
+A domain ownership the resource did not record needs `--adopt` when it is `verified` or `expiring`, since it may keep someone's hostnames serving. An `unverified` one is taken over without `--adopt`, which also lets a deploy that failed after the create succeed on the next run. No failure deletes anything. Destroy deletes the domain ownership and its TXT record.
 
-How proving works now:
+Don't declare one for the same exact hostname as a `Prisma.RoutingUrl`: it would take over the domain ownership Prisma created for the RoutingUrl and delete it on destroy.
 
-1. Look up the domain ownership: by its stored id, or by domain when there is no stored id or it no longer resolves. A row found by domain is subject to the ownership rules below. If Prisma reports it `verified`, it is proved. `unverified` and `expiring` do not count.
-2. Read the TXT record from `GET /v1/workspaces/{id}/domain-ownerships/verification`, and ask every authoritative nameserver for it, as #2701 did. The answer is `seen`, `absent` (a nameserver answered without it; checked again every 3 seconds, up to 20 times) or `unknown` (no nameserver could be found or reached).
-3. On `absent`, fail with `PrismaDomainOwnershipRequired`, which names the record to publish. Nothing is created.
-4. On `seen` or `unknown`, create the domain ownership if there is none, then call `POST /v1/domain-ownerships/{id}/verify` until it reports `verified`, up to 6 more times, 5 seconds apart. On `unknown`, Prisma's own lookup decides.
-5. If it is still not verified, fail with `PrismaDomainOwnershipRequired`. No failure deletes anything.
+### Also in this pull request
 
-Who owns what (the same rule in `read`, in `reconcile` and after a create):
+- `internal/AuthoritativeDns`, from #2701, now answers `seen`, `absent` or `unknown`, can be replaced in tests, and each caller states where its nameserver search starts.
+- The Compute guide and the Website guide lead with `Prisma.RoutingUrl`; the framework pages no longer name `Prisma.CustomDomain`.
+- The Cloudflare, email, skills and scripts changes that reached #2701 through merges from main are not included.
 
-- A domain ownership this resource did not record needs `--adopt` when it is `verified` or `expiring`, since it may keep someone's hostnames serving.
-- An `unverified` one is taken over without `--adopt`: it grants nothing, so taking it over takes nothing from anyone. This also lets a deploy that failed after creating the row succeed on the next run.
-- If the create answers 200 with a row that is not `unverified` (it appeared while the deploy ran), the deploy fails and asks for `--adopt`.
-- The domain ownership create and the custom domain create retry only throttled requests. A create whose response was lost and was retried would answer 200 for the row it just made, and the deploy would then refuse its own row.
-- Destroy deletes the domain ownership and its TXT record.
+Depends on the alchemy-run/distilled pull request from `feat/prisma-routing-urls` (the HTTP status on creates and the typed RoutingUrl refusals). `submodules/distilled` must be pinned to a Distilled commit that contains it. The branch currently pins the same Distilled commits rebuilt on the commit Alchemy pins today, because Alchemy does not build against Distilled `main`.
 
-Upgrading: a `Prisma.Website` with `domain: { name, dns }` now declares a domain ownership for its hostname. If the workspace already proved that hostname by hand, the first deploy fails with `OwnedBySomeoneElse`. Run that deploy once with `--adopt`.
+### Tests
 
-Attributes add `status` (`unverified`, `verified` or `expiring`) and `expiresAt`. They are what Prisma reported when the deploy last proved the domain; an unchanged redeploy does not check again. #2698's `verifiedAt` is gone: Prisma's response no longer has it, and the closest field (`verificationRecordLastSeenAt`) means something else.
+All through `stack.deploy` against a fake Management API and an in-memory DNS host whose alias resource reads and deletes like Cloudflare's (`test/Prisma/fixtures/RoutingUrlCloud.ts`):
 
-`Prisma.CustomDomain` moves to distilled's `/v1/services` routes, takes an optional `ownership`, and keeps main's guard: a create that answers 200 (the domain was already registered, for example by a race) fails and asks for explicit adoption instead of taking the domain over. It reads the status from the new `httpStatus` member in distilled.
+- `test/Prisma/RoutingUrl.test.ts`: a hostname with no DNS is saved `pending`, a redeploy sends no `PATCH`, destroy deletes only the row; a row found by `logicalId` is updated in place and a row with no `logicalId` is taken over; a hostname change on an `active` row is refused with no `PATCH` when ownership or DNS is absent or unknown, and goes through with a verified domain ownership or the TXT record seen; with `dns`, the first deploy publishes exactly the two records, a redeploy of an `active` row removes nothing, a refused change keeps the old hostname's records (also for two hostnames that differ only in where a dot and a hyphen sit), an accepted change removes them after the `PATCH`, adding `dns` to a deployed row keeps the row, nothing is published in dev, and no domain ownership write is ever sent; one case per typed refusal per operation, answered with the real code and an arbitrary message.
+- `test/Prisma/Website/Domain.test.ts`: a site with `domain` and `dns` saves a RoutingUrl, publishes both records and calls no custom domain route; a site with a plain `domain` deploys `pending`; a site deployed in the released shape, with and without `dns`, upgrades to one row with no `DELETE` sent and its records still published; a custom domain no RoutingUrl took over is still deleted.
+- `test/Prisma/AuthoritativeDns.test.ts`: a unit suite over an in-memory resolver (the pure-utility exception in AGENTS.md).
+- `test/Prisma/DomainOwnership.test.ts` and `test/Prisma/CustomDomain.test.ts`: the proof and adoption rules above, and the 200-on-create race.
 
-Also carried over from #2698 and #2701: the internal `DomainVerification` and `AuthoritativeDns` helpers and the Prisma docs pages. `AuthoritativeDns` now reports `seen`, `absent` or `unknown`, is a replaceable `Context` reference so tests can stub it, and cancels a timed-out DNS query as main's `CustomDomain` did. Each caller states where the nameserver search starts: `Prisma.DomainOwnership` and `Prisma.CustomDomain` start at the record's parent, as #2701 did; the RoutingUrl check starts at the hostname itself, so an apex finds its own zone, and falls back to the parent when the hostname has a CNAME. The Cloudflare, email, skills and scripts changes that reached #2701 through merges from main are not included.
-
-Depends on the alchemy-run/distilled pull request from `feat/prisma-routing-urls` (the RoutingUrl operations, the domain ownership statuses, and `httpStatus` on the two creates). `submodules/distilled` must be pinned to a distilled main commit that contains it once it merges.
-
-Tests, all driven through `stack.deploy` against a fake Management API:
-
-- `test/Prisma/RoutingUrl.test.ts`:
-  - a hostname with no DNS is saved `pending` with both records, a redeploy sends no `PATCH`, and destroy deletes only the row;
-  - a row found by `logicalId` is updated in place; a backfilled row with no `logicalId` is taken over;
-  - another row with the hostname fails and is named;
-  - a hostname change on an `active` row is refused with no `PATCH` sent; refused with `switchboardDns: "unknown"` when DNS could not be checked; refused after a single DNS check when the domain ownership is not verified; and allowed once the new hostname has a verified domain ownership (exact or wildcard) and points at the switchboard;
-  - a hostname change on a `pending` row is sent with no check;
-  - each 409 and 422 refusal becomes its typed error.
-
-- `test/Prisma/AuthoritativeDns.test.ts`, a unit suite over an in-memory resolver (the pure-utility exception in AGENTS.md), since the resource suites replace the DNS check whole:
-  - a CNAME to the switchboard is seen; an apex with no CNAME is seen by its A or AAAA answers; a CNAME to another name whose addresses are the switchboard's is not;
-  - nothing published waits and ends `absent`; no nameservers, failed queries, or a failed switchboard lookup end `unknown`;
-  - a matching A answer counts while the AAAA query fails; nameservers that disagree do not pass;
-  - where the nameserver search starts for each caller, and that a failed lookup on the RoutingUrl search ends `unknown` instead of moving to the parent zone.
-
-- `test/Prisma/DomainOwnership.test.ts`, with the authoritative check stubbed:
-  - an `absent` record fails and creates nothing;
-  - a `seen` record leads to create (201) and verify until `verified`; so does `unknown`;
-  - a create answering 200 with an `unverified` row is accepted, and with a `verified` row fails and asks for `--adopt`;
-  - the bounded verify loop ends in `PrismaDomainOwnershipRequired`;
-  - an unverified row is taken over without `--adopt`, and a verified one is refused;
-  - when the stored id is gone, a verified row found by domain is refused without `--adopt` and taken with it;
-  - an `expiring` row is not counted as proved.
-  - No failure sends a DELETE.
-- `test/Prisma/CustomDomain.test.ts`: "routes a 200 custom-domain create race through explicit adoption", restored from main, now with the DNS check stubbed and its arguments asserted.
-
-Live tests, gated on `ALCHEMY_RUN_LIVE_PRISMA_TESTS=true`: `test/Prisma/RoutingUrl.test.ts` saves a RoutingUrl for a hostname with no DNS and deletes it, and changes an active hostname to one that points at the switchboard by A records, waiting for it to become `active`; `test/Prisma/Website/CustomDomainDns.test.ts` also checks `status: "verified"`. Neither has been run against production yet.
+Live tests behind `ALCHEMY_RUN_LIVE_PRISMA_TESTS=true` cover a RoutingUrl with no DNS, a hostname change, a site with `dns` on Cloudflare, and the upgrade from the released shape. **None of them has been run**: we have no Prisma or Cloudflare test credentials for this repository. The Cloudflare adoption of the second CNAME and the upgrade are the two places where a live run would tell us most.
 
 Agent: prospero-20
 
