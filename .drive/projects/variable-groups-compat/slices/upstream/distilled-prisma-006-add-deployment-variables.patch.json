@@ -1,0 +1,29 @@
+{
+  "description": "Declare the `variables` field the platform is adding to the create-deployment request (POST /v1/services/{serviceId}/deployments): a map from key to a string, which sets the key, or null, which deletes it. A key not sent keeps its stored value. Remove this patch once the published API description carries the field. The input shape name below follows the converter's naming for this operation and must be checked against .generated-specs before committing.",
+  "patches": [
+    {
+      "op": "add",
+      "path": "/shapes/com.prisma#ServiceVariables",
+      "value": {
+        "type": "map",
+        "key": {
+          "target": "smithy.api#String"
+        },
+        "value": {
+          "target": "smithy.api#String"
+        },
+        "traits": {
+          "smithy.api#sparse": {},
+          "smithy.api#documentation": "Variables stored on the service. A string sets the key, null deletes it, and a key not sent keeps its stored value."
+        }
+      }
+    },
+    {
+      "op": "add",
+      "path": "/shapes/com.prisma#PostV1ServicesByServiceIdDeploymentsRequest/members/variables",
+      "value": {
+        "target": "com.prisma#ServiceVariables"
+      }
+    }
+  ]
+}

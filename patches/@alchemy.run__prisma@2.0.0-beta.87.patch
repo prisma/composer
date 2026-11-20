@@ -1,0 +1,267 @@
+diff --git a/lib/Deployment.d.ts b/lib/Deployment.d.ts
+index 4bbdd61c..e7f02f14 100644
+--- a/lib/Deployment.d.ts
++++ b/lib/Deployment.d.ts
+@@ -119,6 +119,20 @@ export interface DeploymentProps {
+      * ```
+      */
+     triggers?: Record<string, unknown>;
++    /**
++     * Variables the platform stores on the App, sent with the request that
++     * creates the deployment. A string sets a key, `null` deletes it, and a key
++     * left out keeps its stored value. The platform accepts them only when a
++     * deployment is created, so any change to the resolved map, a value that is
++     * not resolved while planning, or declaring `variables` on a deployment that
++     * was created without them replaces the deployment. They are never sent on
++     * an update.
++     *
++     * Values may be wrapped in `Redacted.make(secret)`; they are unwrapped only
++     * for the request and the fingerprint. Leaving `variables` unset sends no
++     * field.
++     */
++    variables?: Record<string, Redacted.Redacted<string> | null>;
+ }
+ export interface Deployment extends Resource<"Prisma.Deployment", DeploymentProps, {
+     /**
+@@ -152,6 +166,11 @@ export interface Deployment extends Resource<"Prisma.Deployment", DeploymentProp
+      * state; absent when `triggers` is unset.
+      */
+     triggersHash?: Redacted.Redacted<string>;
++    /**
++     * Salted fingerprint of the resolved `variables` this deployment was
++     * created with; absent when `variables` is unset.
++     */
++    variablesHash?: Redacted.Redacted<string>;
+     /**
+      * Stable App endpoint domain after promotion.
+      */
+diff --git a/lib/Deployment.js b/lib/Deployment.js
+index 07e57267..aa63404d 100644
+--- a/lib/Deployment.js
++++ b/lib/Deployment.js
+@@ -112,6 +112,7 @@ const attrsFrom = (deployment, appId, extra) => ({
+     previewDomain: deployment.previewDomain,
+     artifactHash: extra?.artifactHash,
+     triggersHash: extra?.triggersHash,
++    variablesHash: extra?.variablesHash,
+     appEndpointDomain: extra?.appEndpointDomain,
+     createdAt: deployment.createdAt,
+ });
+@@ -197,6 +198,30 @@ const triggersHashOf = (triggers) => sha256Object({
+     triggers: unwrapRedacted(triggers) ?? null,
+ });
+ const persistedTriggersHash = (value) => Redacted.isRedacted(value) ? Redacted.value(value) : value;
++const VARIABLES_HASH_SALT = "alchemy/Prisma.Deployment/variables/v1";
++const variablesHashOf = (variables) => sha256Object({
++    salt: VARIABLES_HASH_SALT,
++    variables: unwrapRedacted(variables) ?? null,
++});
++const requestVariables = (variables) => Object.fromEntries(Object.entries(variables).map(([key, value]) => [
++    key,
++    Redacted.isRedacted(value) ? Redacted.value(value) : value,
++]));
++/**
++ * Whether the declared `variables` require a new deployment. Unlike
++ * `triggers`, a declaration with no recorded fingerprint replaces: an update
++ * creates no deployment, so the values would never reach the platform.
++ */
++const variablesChanged = Effect.fn(function* (variables, persisted) {
++    if (variables === undefined)
++        return false;
++    const recorded = persistedTriggersHash(persisted);
++    if (recorded === undefined)
++        return true;
++    if (!isResolved({ variables }))
++        return true;
++    return (yield* variablesHashOf(variables)) !== recorded;
++});
+ /**
+  * Whether the declared `triggers` inputs differ from the fingerprint the
+  * running deployment was created for.
+@@ -268,6 +293,9 @@ const ProviderLive = () => Provider.effect(Deployment, Effect.gen(function* () {
+             if (yield* triggersChanged(news.triggers, output?.triggersHash)) {
+                 return { action: "replace" };
+             }
++            if (yield* variablesChanged(news.variables, output?.variablesHash)) {
++                return { action: "replace" };
++            }
+             const replacementContent = {
+                 portMapping: news.portMapping,
+                 skipCodeUpload: news.skipCodeUpload,
+@@ -368,6 +396,9 @@ const ProviderLive = () => Provider.effect(Deployment, Effect.gen(function* () {
+             const triggersHash = news.triggers === undefined
+                 ? undefined
+                 : Redacted.make(yield* triggersHashOf(news.triggers));
++            const variablesHash = news.variables === undefined
++                ? undefined
++                : Redacted.make(yield* variablesHashOf(news.variables));
+             const appId = yield* resolveAppId(news.app);
+             const deploymentId = isPrismaDevId(output?.deploymentId)
+                 ? undefined
+@@ -392,6 +423,9 @@ const ProviderLive = () => Provider.effect(Deployment, Effect.gen(function* () {
+                     serviceId: appId,
+                     ...(news.portMapping === undefined ? {} : { portMapping: news.portMapping }),
+                     ...(news.skipCodeUpload === undefined ? {} : { skipCodeUpload: news.skipCodeUpload }),
++                    ...(news.variables === undefined
++                        ? {}
++                        : { variables: requestVariables(news.variables) }),
+                 }).pipe(
+                 // A replayed create would make a second deployment; the retry
+                 // policy cannot see the request, so opt out explicitly.
+@@ -447,6 +481,7 @@ const ProviderLive = () => Provider.effect(Deployment, Effect.gen(function* () {
+             return attrsFrom(deployment, appId, {
+                 artifactHash,
+                 triggersHash,
++                variablesHash,
+                 appEndpointDomain,
+             });
+         }),
+@@ -474,6 +509,7 @@ const ProviderLocal = () => devProvider(Deployment, ["deploymentId"], ({ id, new
+     previewDomain: undefined,
+     artifactHash: undefined,
+     triggersHash: undefined,
++    variablesHash: undefined,
+     appEndpointDomain: undefined,
+     createdAt: DEV_TIMESTAMP,
+ }));
+diff --git a/src/Deployment.ts b/src/Deployment.ts
+index 71258d31..70b18953 100644
+--- a/src/Deployment.ts
++++ b/src/Deployment.ts
+@@ -144,6 +144,20 @@ export interface DeploymentProps {
+    * ```
+    */
+   triggers?: Record<string, unknown>;
++  /**
++   * Variables the platform stores on the App, sent with the request that
++   * creates the deployment. A string sets a key, `null` deletes it, and a key
++   * left out keeps its stored value. The platform accepts them only when a
++   * deployment is created, so any change to the resolved map, a value that is
++   * not resolved while planning, or declaring `variables` on a deployment that
++   * was created without them replaces the deployment. They are never sent on
++   * an update.
++   *
++   * Values may be wrapped in `Redacted.make(secret)`; they are unwrapped only
++   * for the request and the fingerprint. Leaving `variables` unset sends no
++   * field.
++   */
++  variables?: Record<string, Redacted.Redacted<string> | null>;
+ }
+ 
+ export interface Deployment extends Resource<
+@@ -181,6 +195,11 @@ export interface Deployment extends Resource<
+      * state; absent when `triggers` is unset.
+      */
+     triggersHash?: Redacted.Redacted<string>;
++    /**
++     * Salted fingerprint of the resolved `variables` this deployment was
++     * created with; absent when `variables` is unset.
++     */
++    variablesHash?: Redacted.Redacted<string>;
+     /**
+      * Stable App endpoint domain after promotion.
+      */
+@@ -286,6 +305,7 @@ const attrsFrom = (
+   extra?: {
+     artifactHash?: string;
+     triggersHash?: Redacted.Redacted<string>;
++    variablesHash?: Redacted.Redacted<string>;
+     appEndpointDomain?: string;
+   },
+ ): Deployment["Attributes"] => ({
+@@ -296,6 +316,7 @@ const attrsFrom = (
+   previewDomain: deployment.previewDomain,
+   artifactHash: extra?.artifactHash,
+   triggersHash: extra?.triggersHash,
++  variablesHash: extra?.variablesHash,
+   appEndpointDomain: extra?.appEndpointDomain,
+   createdAt: deployment.createdAt,
+ });
+@@ -427,6 +448,40 @@ const triggersHashOf = (triggers: unknown) =>
+ const persistedTriggersHash = (value: Redacted.Redacted<string> | string | undefined) =>
+   Redacted.isRedacted(value) ? Redacted.value(value) : value;
+ 
++const VARIABLES_HASH_SALT = "alchemy/Prisma.Deployment/variables/v1";
++
++const variablesHashOf = (variables: unknown) =>
++  sha256Object({
++    salt: VARIABLES_HASH_SALT,
++    variables: unwrapRedacted(variables) ?? null,
++  });
++
++const requestVariables = (
++  variables: Record<string, Redacted.Redacted<string> | string | null>,
++): Record<string, string | null> =>
++  Object.fromEntries(
++    Object.entries(variables).map(([key, value]) => [
++      key,
++      Redacted.isRedacted(value) ? Redacted.value(value) : value,
++    ]),
++  );
++
++/**
++ * Whether the declared `variables` require a new deployment. Unlike
++ * `triggers`, a declaration with no recorded fingerprint replaces: an update
++ * creates no deployment, so the values would never reach the platform.
++ */
++const variablesChanged = Effect.fn(function* (
++  variables: unknown,
++  persisted: Redacted.Redacted<string> | string | undefined,
++) {
++  if (variables === undefined) return false;
++  const recorded = persistedTriggersHash(persisted);
++  if (recorded === undefined) return true;
++  if (!isResolved({ variables })) return true;
++  return (yield* variablesHashOf(variables)) !== recorded;
++});
++
+ /**
+  * Whether the declared `triggers` inputs differ from the fingerprint the
+  * running deployment was created for.
+@@ -510,6 +565,9 @@ const ProviderLive = () =>
+           if (yield* triggersChanged(news.triggers, output?.triggersHash)) {
+             return { action: "replace" } as const;
+           }
++          if (yield* variablesChanged(news.variables, output?.variablesHash)) {
++            return { action: "replace" } as const;
++          }
+           const replacementContent = {
+             portMapping: news.portMapping,
+             skipCodeUpload: news.skipCodeUpload,
+@@ -622,6 +680,10 @@ const ProviderLive = () =>
+             news.triggers === undefined
+               ? undefined
+               : Redacted.make(yield* triggersHashOf(news.triggers));
++          const variablesHash =
++            news.variables === undefined
++              ? undefined
++              : Redacted.make(yield* variablesHashOf(news.variables));
+           const appId = yield* resolveAppId(news.app);
+           const deploymentId = isPrismaDevId(output?.deploymentId)
+             ? undefined
+@@ -661,6 +723,9 @@ const ProviderLive = () =>
+               serviceId: appId,
+               ...(news.portMapping === undefined ? {} : { portMapping: news.portMapping }),
+               ...(news.skipCodeUpload === undefined ? {} : { skipCodeUpload: news.skipCodeUpload }),
++              ...(news.variables === undefined
++                ? {}
++                : { variables: requestVariables(news.variables) }),
+             }).pipe(
+               // A replayed create would make a second deployment; the retry
+               // policy cannot see the request, so opt out explicitly.
+@@ -740,6 +805,7 @@ const ProviderLive = () =>
+           return attrsFrom(deployment, appId, {
+             artifactHash,
+             triggersHash,
++            variablesHash,
+             appEndpointDomain,
+           });
+         }),
+@@ -778,6 +844,7 @@ const ProviderLocal = () =>
+     previewDomain: undefined,
+     artifactHash: undefined,
+     triggersHash: undefined,
++    variablesHash: undefined,
+     appEndpointDomain: undefined,
+     createdAt: DEV_TIMESTAMP,
+   }));
