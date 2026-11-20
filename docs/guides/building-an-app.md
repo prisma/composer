@@ -216,16 +216,16 @@ The workflow, once per schema change (Prisma ORM commands, via the `prisma` CLI 
 3. `prisma migration plan --name <slug>` — authors the migration into `migrations/`. On a brand-new project this authors the baseline (empty → your schema); commit `migrations/` with the change.
 4. Deploy. The deploy applies `migrations/` before the service starts — there's no `CREATE TABLE IF NOT EXISTS` anywhere in app code. Every service that uses the database waits for its migration: if the migration fails, the new service code does not ship. Old code keeps running against the new schema until the new deployment is live, so a migration must not break the code it replaces.
 
-The deploy is replay-only: it applies the migrations you authored and committed, and it never creates schema itself — a fresh database is brought up by replaying the committed baseline. When the migration fails, the deploy fails with Prisma ORM's own error, the one `prisma db migrate` prints, and its advice: the ORM's error code, what happened, why, and the commands that recover. For example, when no committed migration reaches the target contract:
+The deploy is replay-only: it applies the migrations you authored and committed, and it never creates schema itself — a fresh database is brought up by replaying the committed baseline. When the migration fails, the deploy fails with Prisma ORM's own error and advice: the ORM's error code, what happened, why, and the commands that recover. For example, when no committed migration reaches the target contract:
 
-```
-OrmMigrationError: [MIGRATION.PATH_UNREACHABLE] Current contract has no planned migration path
+```text
+MIGRATION.PATH_UNREACHABLE: Current contract has no planned migration path
   why: No migration edge connects the current state "<hash>" to the target "<hash>" in contract space "app". …
 → Plan the missing edge: prisma migration plan --from <hash> --to <hash> --name <slug>
 → Apply it: prisma db migrate --to <hash>
 ```
 
-When the database's contract is not in the migration graph at all (`MIGRATION.MARKER_MISMATCH`), for example because `prisma db update` moved it or a migration it applied was deleted, the advice offers `prisma db update` for a database that does not change only through migrations, and authoring migrations for one that does, such as production. To apply a migration you planned, commit it and deploy again: the deploy applies it. Where a command ends in `--db <url>`, supply the deployed database's connection string: the database the deploy migrated is the one it provisioned, not the one `prisma.config.ts` names. Commands also carry `--config` when the database's `prisma.config.ts` is not the one in the directory you deploy from. Databases whose schema an older framework version synthesized at first deploy need a one-time retrofit; see [Deploying and operating](deploying.md#updating-a-database-whose-schema-an-older-version-synthesized).
+When the database's contract is not in the migration graph at all (`MIGRATION.MARKER_MISMATCH`), for example because `prisma db update` moved it or a migration it applied was deleted, the advice offers `prisma db update` for a development database that you also change outside migrations; for a database that changes only through migrations, such as production, author the migrations instead. To apply a migration you planned, commit it and deploy again: the deploy applies it. Where a command ends in `--db <url>`, supply the deployed database's connection string: the database the deploy migrated is the one it provisioned, not the one `prisma.config.ts` names. Commands also carry `--config` when the database's `prisma.config.ts` is not the one in the directory you deploy from. Databases whose schema an older framework version synthesized at first deploy need a one-time retrofit; see [Deploying and operating](deploying.md#updating-a-database-whose-schema-an-older-version-synthesized).
 
 In your app, the emitted contract is wrapped once, and that one value is
 referenced by both the resource and every service that queries it:
