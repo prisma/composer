@@ -361,16 +361,7 @@ completes: a failed migration means the new code does not ship. The old
 code serves against the new schema until the new deployment is live, so
 keep each migration compatible with the code it replaces.
 
-If no authored path reaches the target contract, deploy (and `dev` against a
-stale local database) refuses with `MIGRATION_PATH_NOT_FOUND`; its message
-lists the two ways out: author the missing migration, or, when iterating
-against a local
-database only, `prisma db update`. The tracked migration resource persists only
-compact contract identity in deploy state; if the emitted contract artifact
-named by `prisma.config.ts` is missing, unreadable, or no longer matches the
-declared `dataContract(...)` value, deploy fails before touching the database.
-Never skip step 3 before a deploy. See `examples/store/modules/catalog` for the
-complete pattern.
+A failed migration fails deploy (and `dev`) with Prisma ORM's own error as `prisma db migrate` prints it: its code, why, and recovery commands. No authored path to the target is `MIGRATION.PATH_UNREACHABLE` (author the missing migration); a database whose contract is not in the graph at all is `MIGRATION.MARKER_MISMATCH` (`prisma db update` only for a database that does not change only through migrations; otherwise author migrations). Apply a planned migration by committing it and deploying again. Where a command ends in `--db <url>`, supply the deployed database's connection string, since it is not the one `prisma.config.ts` names. The tracked migration resource persists only compact contract identity in deploy state; if the emitted contract artifact named by `prisma.config.ts` is missing, unreadable, or no longer matches the declared `dataContract(...)` value, deploy fails before touching the database. Never skip step 3 before a deploy. See `examples/store/modules/catalog` for the complete pattern.
 
 ## Deploy model: converge, don't script
 
@@ -720,8 +711,7 @@ today the blocks above plus your own Modules are the whole set, so verify a
    address below the root, such as `a.b`, has 3 characters. A service
    whose name equals its enclosing Module's reads as `shop.auth.auth` unless
    given an explicit `id`.
-8. **`MIGRATION_PATH_NOT_FOUND`**: see Databases above; author the missing
-   migration, don't skip the plan step.
+8. **`MIGRATION.PATH_UNREACHABLE`**: see Databases above; author the missing migration, don't skip the plan step.
 9. **Date/time columns hand back `Temporal.*` values on read.** Bun and
    stock Node ship no global `Temporal`, so a service with `DateTime`
    contract columns compiles and deploys, then fails on the first timestamp
