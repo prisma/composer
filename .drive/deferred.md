@@ -296,6 +296,10 @@ The other installed weight, largest first:
 - **`esbuild`, 10.6 MB.** Composer uses it only to build the boot wrapper. Switching to rolldown would pin rolldown to the version Alchemy uses; not decided.
 - **`redis`, about 5 MB.** It is a required peer of `@effect/platform-node`. The fix is upstream in Effect.
 
+Not install weight, but found in the same work:
+
+- **Source paths in the published maps climb out of the package folder**, for example `../../../../1-prisma-cloud/…/src/x.ts`. In a user's install a stack frame therefore names a folder that does not exist, although the file name, line and embedded source are right. Rewriting the paths to stay inside the package is a separate change.
+
 # Module input — deferred (2026-10-29)
 
 - **`doppler()` and other secrets adapters.** `secrets: [doppler()]` beside `config: [dotenv()]`; only the default `environmentVariables()` ships with module-input.

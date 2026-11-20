@@ -9,8 +9,8 @@ import { defineConfig } from 'tsdown';
 // (the local stand-in) in its own pass. `bun` stays external everywhere it's
 // reached (a runtime builtin, ADR-0008); `@internal/`/`@prisma/`/`arktype`/
 // `@standard-schema/`/`better-auth`/`jose`/`pg` are inlined so the
-// entrypoint/testing bundles are otherwise self-contained. The Prisma ORM
-// (`@prisma/orm-*`) is never inlined: the app installs it (ADR-0046). Hand-maintained
+// entrypoint/testing bundles are otherwise self-contained, except for the
+// Prisma ORM (`@prisma/orm-*`), which is never inlined. Hand-maintained
 // `package.json#exports` per the exports-entrypoints rule's multi-pass
 // exception.
 export default defineConfig([
@@ -72,9 +72,9 @@ export default defineConfig([
     noExternal: [
       /^@internal\//,
       ...inputDocumentRuntimeDependencies,
-      // The local bootstrap runs the ORM's real dbInit path through the app's
-      // own `@prisma/orm-postgres` and `@prisma/orm-toolchain` (ADR-0046).
-      // Inlining them here shipped a second copy of the ORM and prettier.
+      // The ORM stays external: the published package declares
+      // `@prisma/orm-postgres` as a peer and `@prisma/orm-toolchain` as a
+      // dependency, so npm installs one copy of each (ADR-0046).
       /^@prisma\/(?!orm-)/,
       /^arktype/,
       /^@standard-schema\//,
