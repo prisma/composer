@@ -4063,9 +4063,6 @@ describe('deploy-run reporting', () => {
   });
 
   test("a structured error a provider fails with reaches the deploy's failure and build report under its own code", async () => {
-    class ProviderRefusal extends CliStructuredError {
-      readonly _tag = 'ProviderRefusal';
-    }
     const message =
       'The database is at a contract that is not in the migration graph\n→ Reconcile the database: prisma db update --db <url>';
     const app = makeAppDir();
@@ -4091,7 +4088,7 @@ describe('deploy-run reporting', () => {
             kind: 'failed',
             reasons: failureReasons(
               Cause.fail(
-                toProviderError(new ProviderRefusal('MIGRATION.MARKER_MISMATCH', message)),
+                toProviderError(new CliStructuredError('MIGRATION.MARKER_MISMATCH', message)),
               ),
             ),
           })),
