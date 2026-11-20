@@ -551,10 +551,21 @@ What deployed apps actually run into, and what to do about it:
   authenticated for you, and your `curl` isn't one of the services the app
   connected to it — so it's turned away, and a provider with no consumers turns
   away everyone. Reach it through a consumer instead.
-- **The `COMPOSER_*` variables in your project belong to the deploy.** Ports,
-  connection settings, generated values and service keys all land there, and
-  every deploy rewrites them — editing one by hand doesn't survive. A service's
-  input document is not among them: it travels in the service's artifact.
+- **A service's `COMPOSER_*` variables belong to the deploy.** Its port,
+  connection settings, generated values and service keys are sent with each
+  new deployment of the service and stored on the service as service
+  variables, which Console shows read-only. A service's input document is not
+  among them: it travels in the service's artifact.
+- **A service holds at most 50 variables.** The deploy refuses a service that
+  would send more than 50 values, before it changes anything, and names the
+  service and the count. Variables you set on a service in Console count toward
+  the platform's limit too, so a service close to 50 can still fail mid-deploy
+  with "Quota exceeded for service_variable".
+- **A deployment you make in Console lasts until the next `prisma deploy`.**
+  Console's "Save and Deploy" creates a deployment the deploy doesn't know;
+  the next `prisma deploy` makes the deploy's own deployment live again. A
+  value you saved stays stored on the service and reaches that deployment the
+  next time the deploy replaces it.
 - **Calls into a sleeping service can get `ECONNRESET`** while it cold-starts.
   Retry them.
 - **The `cron` scheduler stays awake on purpose.** It holds Compute's
@@ -573,6 +584,20 @@ What deployed apps actually run into, and what to do about it:
 When something misbehaves in ways these don't explain, check
 [`gotchas.md`](../../gotchas.md) at the repo root — the catalogue of platform
 footguns with diagnoses, kept current as we hit them.
+
+## Upgrading to service variables
+
+Earlier versions wrote each service's `COMPOSER_*` values as environment variables in the project: on production in the production class, on any other environment as overrides on its branch. This version sends them with each new deployment, and Prisma Cloud stores them on the service as service variables. The platform is removing branch overrides, so earlier versions' preview deploys stop working once it rejects them.
+
+The first deploy with this version:
+
+- **replaces each service's deployment once.** The new deployment is created with every value, and your service's URL does not change.
+- **deletes the old variables afterwards.** Each one is deleted after the old deployment that read it has stopped. A deployment still finishing open connections keeps its variables until a later deploy finds it stopped, so some can stay visible in the Console after the first deploy. While both exist, the service's own value wins. On production the `COMPOSER_*` variables leave your project's production variables.
+- **skips a variable you already deleted.** A variable the platform refuses to delete because it no longer matches what the deploy recorded is dropped from the deploy's records, and the deploy prints a warning naming it. Delete it in the Console if it is still listed.
+
+If the first deploy is interrupted after the new deployments exist, the next deploy finishes deleting without replacing anything again.
+
+**Don't go back to an older version afterwards.** An older version writes the variables again, but the values stored on each service win over them, so a value that changes later, such as a rotated connection, never reaches the service. Delete a service's variables in the Console before deploying it with an older version.
 
 ## Upgrading to input documents in the artifact
 
@@ -615,9 +640,8 @@ The first deploy with this version moves every resource of an existing
 environment to its new name in place. Databases keep their rows, buckets keep
 their objects, and generated secrets and service keys keep their values. The
 platform resources' `logicalId`s change to the full address in the same deploy.
-Environment variable keys gain the app name (`COMPOSER_STOREFRONT_AUTH_…`): each
-variable is replaced by one with the same value under the new key, and services
-get a new deployment.
+Configuration keys gain the app name (`COMPOSER_STOREFRONT_AUTH_…`), and
+services get a new deployment.
 
 Every name Composer gives a platform resource becomes the full address too:
 apps, buckets and Composer's database connections and bucket access keys are
@@ -641,25 +665,7 @@ Two things to do yourself:
 - **Don't deploy an environment with an older version afterwards.** It would
   look for the old names and recreate every resource, losing their data.
 
-An app with a module or a service directly below the root named like the app
-(`shop.shop.x` beside `shop.x`, in any letter case), or with modules that spell
-an app name containing `-` or `_` (`my-shop.my.shop.x` beside `my-shop.x`), can
-hit one more step. There, one node's new variable key is the key an earlier
-version wrote for another node. The deploy stops before any resource is created, changed or deleted, and
-names the variable and both nodes. The Branch's topology in the Console already
-shows the new addresses by then. It lists every such variable at once. Delete each,
-then deploy again:
-
-```sh
-prisma project env delete 'COMPOSER_SHOP_X_ORIGIN' --project '<project-id>' --role production
-prisma project env delete 'COMPOSER_SHOP_X_ORIGIN' --project '<project-id>' --branch '<branch>'
-```
-
-The first form is for production, the second for any other environment; the
-Console's Environment variables page works too. Nothing is lost: the deploy
-writes every value under its new key, and running services keep their own copy
-until then. Don't rename either node to get around it: a new address is a new
-entity, and its old rows, and a database's or bucket's data, are deleted.
+**Deploy once with a release from 0.35.0 to 0.39.0 first** if your app is on a release before 0.35.0. Those releases make this move while the old variables can still be checked: an app with a module or a service directly below the root named like the app (`shop.shop.x` beside `shop.x`, in any letter case), or with modules that spell an app name containing `-` or `_` (`my-shop.my.shop.x` beside `my-shop.x`), can give one node's new key to the key an earlier version wrote for another node, and those releases stop and name it. The current version writes no variable rows and does not check, so a service that has no value for such a key would receive the other node's old value once.
 
 `prisma dev` keeps its local services, databases and buckets: on its first run
 it rewrites the directory's record to the new addresses. `prisma dev url` takes
@@ -690,7 +696,7 @@ Legacy leftovers are inert and safe to remove whenever convenient — nothing re
 
 Framework versions that manage databases, apps, deployments, and environment variables through upstream alchemy's Prisma provider adopt each environment's existing resources in place — deploy state already in the platform state API is migrated automatically on read (rows written under retired type-ids), and existing databases and connections are adopted, never replaced. The first redeploy can still converge database *properties* in place — Branch attachment and display name — as the one-time effects below describe. Environments still on the older SQL state store are not migrated — destroy and redeploy them, as the section above describes.
 
-**A service's deployment is replaced exactly when its artifact or environment changed, and reused otherwise.** The platform freezes a deployment's environment when the deployment is created, so a changed value only takes effect through a new one — the framework declares each service's environment values as the deployment's replacement triggers (alchemy's `Prisma.Deployment.triggers`), so a changed variable, a value re-issued in place (a connection rotated in place, a re-minted service key), or an out-of-band rotation of a platform variable a service's input document names all ship a new deployment, and an unchanged service redeploys nothing. No plaintext lands in deploy state — alchemy persists only a salted fingerprint of the trigger values. A replacement uploads the artifact, starts it, moves the stable endpoint over, and removes the old deployment; your service's URL does not change.
+**A service's deployment is replaced exactly when its artifact or environment changed, and reused otherwise.** The platform copies a deployment's environment when the deployment is created, so a changed value only takes effect through a new one. A changed value of the service's own (including one re-issued in place: a connection rotated in place, a re-minted service key), a key added or removed, or an out-of-band change to a platform variable the service's input document names all ship a new deployment, and an unchanged service redeploys nothing. The service's own values are stored in deploy state as text, as the deployment's `variables`; your platform variables' values never are. A replacement uploads the artifact, starts it, moves the stable endpoint over, and removes the old deployment; your service's URL does not change.
 
 **The framework never writes, modifies or deletes `DATABASE_URL` or `DATABASE_URL_POOLED`.** Prisma Cloud writes them only when a project is created with a database, or when a database is created as the project's default. The framework creates your project without one, so on a project it created neither variable exists unless you set it. On a project created outside the framework with a default database, both hold live values, and every service on production receives them, as on any Prisma Cloud project. Nothing you declare can carry those names (`variable()` and `variable.secret()` reject them), and every database URL your services use comes from the connection they declare.
 

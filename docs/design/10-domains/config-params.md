@@ -80,16 +80,16 @@ Follow a compute service `web` in the app `shop`, with a `rawPostgres()` depende
 Config = { service: { port: 3000 }, inputs: { db: { url: 'postgres://…' } } }
 ```
 
-**Deploy: serialize and store (the target).** `@prisma/composer-prisma-cloud` encodes each value as one environment variable on the platform, keyed `COMPOSER_` plus the full address, upper-cased, with `.` and `-` turned into `_`, then the owner and name. Every generated key carries the `COMPOSER_` prefix, the framework's reserved namespace, kept clear of the platform variables the operator sets:
+**Deploy: serialize and store (the target).** `@prisma/composer-prisma-cloud` encodes each value as one key in the `variables` of the service's deployment, which the platform stores on the service as a service variable ([ADR-0069](../90-decisions/ADR-0069-a-services-composer-keys-travel-with-its-deployment-as-service-variables.md)), keyed `COMPOSER_` plus the full address, upper-cased, with `.` and `-` turned into `_`, then the owner and name. Every generated key carries the `COMPOSER_` prefix, the framework's reserved namespace, kept clear of the platform variables the operator sets:
 
 ```
 COMPOSER_SHOP_WEB_PORT   = '3000'
 COMPOSER_SHOP_WEB_DB_URL = '"postgres://…"'
 ```
 
-The service's deployment depends on these variables, so it is created after the writes and replaced when a value changes.
+The deployment is created with these keys, after every resource their values come from, and replaced when a value changes. A key with no value is sent as `null`, which deletes a value an earlier deploy stored.
 
-**Boot: deserialize (the target).** The service's bootstrap reads the rows back and reverses the encoding: `port` is validated into a number, and the dependency's params into its connection values.
+**Boot: deserialize (the target).** The service's bootstrap reads the keys back and reverses the encoding: `port` is validated into a number, and the dependency's params into its connection values.
 
 **Runtime.** The service reads the port through `service.port()` and its dependencies through `service.load()`, which hydrates them. Its input comes separately, from its input document, through `service.input()` ([ADR-0042](../90-decisions/ADR-0042-service-input-is-one-standard-schema.md)).
 

@@ -45,9 +45,9 @@ region map — that would couple it to the platform's URL convention and break
 silently if the scheme changed (the no-guessing rule, ADR-0005).
 
 **The framework supplies the value in every environment**, like any other
-config: deploy writes the row unconditionally; a test harness sets
-`COMPOSER_ORIGIN` exactly as it sets other `COMPOSER_*` rows; a local runner
-writes it because it binds the port. Calling `origin()` where nothing supplied
+config: deploy sends the key unconditionally (ADR-0069); a test harness sets
+`COMPOSER_ORIGIN` exactly as it sets other `COMPOSER_*` keys; a local runner
+gives it because it binds the port. Calling `origin()` where nothing supplied
 the row is an ordinary loud missing-config error, raised lazily at the call so
 services that never read it are unaffected.
 

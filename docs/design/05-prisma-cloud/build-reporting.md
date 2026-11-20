@@ -149,9 +149,9 @@ The mapping, keyed by upstream `@alchemy.run/prisma` type ids:
 | `Prisma.Bucket` | `bucket` |
 | `Prisma.App` | `app` |
 | `Prisma.Deployment` | `deployment` (also attaches the deployment to the build and records the app) |
-| `Prisma.EnvironmentVariable` | `config_variable` |
+| `Prisma.EnvironmentVariable` | `config_variable`. A hosted deploy declares none ([ADR-0069](../90-decisions/ADR-0069-a-services-composer-keys-travel-with-its-deployment-as-service-variables.md)), so the only ones reported are the rows an older Composer wrote, as `deleted`, on the first deploy with this version |
 | `Prisma.BucketAccessKey` | not reported; no platform type corresponds |
-| `ServiceKey`, `PgWarm`, any other extension's resource | not reported; not a platform resource |
+| `ServiceKey`, `PgWarm`, `SentKeys`, any other extension's resource | not reported; not a platform resource |
 
 | Terminal state status | Reported action |
 | --- | --- |

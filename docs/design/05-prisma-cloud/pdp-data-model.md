@@ -83,16 +83,18 @@ This is the timing model Prisma Composer's graph must respect:
 | --- | --- | --- |
 | default DB provisioned | the platform **writes** `DATABASE_URL` and `DATABASE_URL_POOLED` as ordinary project-level production-class ConfigVariable **templates** (user-set values win) | `compute-config/wireDefaultDatabaseUrl.ts` |
 | any time | ConfigVariable rows are created/updated/deleted via the environment-variables API — **rows only; no effect on any existing version** | `routes/v1/environment-variables.ts` |
-| **version create** | `materializeBranchEnvVars(app.branchId)` resolves the complete map — production branch → production templates; preview branch → preview templates merged with that branch's overrides (override wins) — decrypts it, and hands the **plain map to Foundry with the version**. The env is **frozen into the version** | `routes/v1/versions.ts` → `resolveDeployEnvVars.ts` → `compute-config/materializeBranchEnvVars.ts` |
+| **version create** | service variables in the request's `variables` are stored on the service first (a string sets a key, `null` deletes it, a key not sent keeps its value); then `materializeBranchEnvVars(app.branchId)` resolves the complete map — production branch → production templates; preview branch → preview templates merged with that branch's overrides (override wins) — decrypts it, and hands the **plain map to Foundry with the version**. The env is **frozen into the version** | `routes/v1/versions.ts` → `resolveDeployEnvVars.ts` → `compute-config/materializeBranchEnvVars.ts` |
 | version start | boots the version; **no env re-resolution** | `routes/v1/version-handlers.ts` |
 | promote | endpoint routed to the version; `serviceEndpointDomain` persisted. The domain returned at *create* names the domain the service will serve on | `interactors/compute/service.ts` |
 
 Consequences Prisma Composer designs around:
 
 1. **A version's environment is a snapshot taken at version creation.** A config
-   value that must be visible to a service's code has to exist as a
-   ConfigVariable row *before* that service's version-create call (the failure
-   mode when it doesn't is documented as PRO-211 in `gotchas.md`).
+   value that must be visible to a service's code has to exist *before* that
+   service's version-create call (the failure mode when it doesn't is
+   documented as PRO-211 in `gotchas.md`). Composer sends a service's own keys
+   in that call, as service variables, so they cannot arrive late
+   ([ADR-0069](../90-decisions/ADR-0069-a-services-composer-keys-travel-with-its-deployment-as-service-variables.md)); a service variable wins over the branch's values.
 2. **Changing config requires a new version to take effect.** There is no
    restart-on-config-change and no live re-resolution; a late-written variable
    never reaches an existing version. Propagating a changed value (e.g. a
@@ -101,7 +103,7 @@ Consequences Prisma Composer designs around:
    the deployment, so the change reaches the running service (see the
    change-propagation note in
    [alchemy-lowering.md](alchemy-lowering.md#the-lowering-graphs)).
-3. **`DATABASE_URL` is not a separate mechanism.** It is a platform-written template flowing through the same materialization as user variables — a convenience for hand-provisioned single services. The platform owns it (system-managed) and writes it only for a project's default database. Prisma Composer refuses to bind or manage the name and creates no default database (see [alchemy-lowering.md](alchemy-lowering.md#database_url-is-forbidden--and-left-to-the-platform)); every database URL a service consumes is an explicit, service-named variable.
+3. **`DATABASE_URL` is not a separate mechanism.** It is a platform-written template flowing through the same materialization as user variables — a convenience for hand-provisioned single services. The platform owns it (system-managed) and writes it only for a project's default database. Prisma Composer refuses to bind or manage the name and creates no default database (see [alchemy-lowering.md](alchemy-lowering.md#database_url-is-forbidden--and-left-to-the-platform)); every database URL a service consumes is an explicit, service-named key.
 4. **Branch + class is the platform's environments model** (production
    templates vs preview templates + per-branch overrides) — the substrate
    [an environment as a Branch](../10-domains/deploy-cli.md#environments-and-containers) is
