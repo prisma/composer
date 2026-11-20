@@ -132,8 +132,6 @@ export const ormMigrationProviderService: Provider.ProviderService<OrmMigration>
           ...(news.refName !== undefined ? { refName: news.refName } : {}),
         });
       },
-      // Surface OrmMigrationError (no-path / runner) as-is — it fails the
-      // deploy with its clear message; nothing is swallowed.
       catch: toProviderError,
     }).pipe(
       Effect.map((outcome) => ({ storageHash: outcome.targetHash, invariants: news.invariants })),

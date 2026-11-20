@@ -331,4 +331,30 @@ describe.skipIf(pg === undefined)('OrmMigration reconcile routes through applyOr
     expect(outcome.error).toBeInstanceOf(OrmMigrationError);
     expect((outcome.error as OrmMigrationError).code).toBe('MIGRATION.PATH_UNREACHABLE');
   });
+
+  test("the recovery commands name the resource's prisma.config.ts with --config", async () => {
+    // The DB is signed at widgetHash; this migrations dir has no migration
+    // that starts or ends there, so the ORM offers its db update commands.
+    const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-pn-res-other-'));
+    try {
+      const outcome = await matchFailure(
+        reconcile({
+          url,
+          migrationsDir: otherDir,
+          configPath: gadgetConfig,
+          currentContractHash: gadgetHash,
+          targetHash: gadgetHash,
+        }),
+      );
+
+      const config = path.relative(process.cwd(), gadgetConfig);
+      expect(outcome.error).toBeInstanceOf(OrmMigrationError);
+      expect((outcome.error as OrmMigrationError).message.split('\n').slice(3, 5)).toEqual([
+        `→ Preview the changes: prisma db update --dry-run --config ${config} --db <url>`,
+        `→ Reconcile the database: prisma db update --config ${config} --db <url>`,
+      ]);
+    } finally {
+      fs.rmSync(otherDir, { recursive: true, force: true });
+    }
+  });
 });
