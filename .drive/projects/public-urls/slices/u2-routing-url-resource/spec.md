@@ -69,10 +69,10 @@ Deliberately out:
 - A deploy of a `Prisma.RoutingUrl` for a hostname with no DNS records succeeds, and its attributes show `pending`, the unmet conditions and both records to publish.
 - A redeploy with nothing changed sends no `PATCH`.
 - A row found by `logicalId` is updated in place; a row with no `logicalId` on the same service and hostname is adopted; a conflicting row fails with an error that names it.
-- A hostname change on an `active` row whose new hostname has no verified domain ownership fails before any `PATCH`, and a test proves no request was sent.
+- A hostname change on an `active` row whose new hostname has no proved ownership (no covering `verified` domain ownership, and its TXT record not seen at every authoritative nameserver) fails before any `PATCH`, and a test proves no request was sent. With `dns`, a refused change leaves the old hostname's records published.
 - Destroy deletes the row and sends no domain ownership request.
 - With `dns`, a first deploy publishes exactly the TXT and the CNAME; a redeploy after the row is `active` with an empty `records` list removes nothing; destroy removes both records and sends no domain ownership request.
-- A `Prisma.Website` with a `domain` declares a RoutingUrl and no CustomDomain or DomainOwnership; with DNS not ready it deploys and reports `pending`.
+- A `Prisma.Website` with a `domain` declares a RoutingUrl and no CustomDomain or DomainOwnership; with DNS not ready it deploys and reports `pending`. With `dns` it also keeps the CNAME resource the released Alchemy declared, under its released id, so an upgraded site's CNAME is updated in place and not deleted; that resource can be dropped once sites deployed before this release have redeployed.
 - A `Prisma.Website` state written by the released Alchemy redeploys with one row for the hostname left on the platform and its DNS records still published, and a test proves no delete was sent for that row.
 - No source file in `packages/prisma/src` other than `CustomDomain.ts` and the exports refers to `Prisma.CustomDomain`.
 - Released in an Alchemy version Composer can depend on.
