@@ -21,6 +21,7 @@
     "check:cli-engine-pin": "node scripts/check-cli-engine-pin.mjs",
     "check:skill-packaging": "node scripts/check-skill-packaging.mjs",
     "check:orm-pins": "node scripts/check-orm-pins.mjs",
+    "check:patched-dependencies": "bun scripts/check-patched-dependencies.ts",
     "contracts:emit": "node scripts/emit-contracts.mjs",
     "check:contracts-emitted": "node scripts/emit-contracts.mjs --check",
     "check:family-static-graph": "node scripts/check-family-static-graph.mjs",

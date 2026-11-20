@@ -91,6 +91,9 @@ jobs:
       - name: Check publish dependency specifiers
         run: pnpm check:publish-deps
 
+      - name: Check no published package depends on a patched package
+        run: pnpm check:patched-dependencies
+
       # The remaining publish-blocking invariants, against the exact artifacts
       # this run would upload (the build step above built everything):
       # engine-once — the engine is an exact peer of the CLI package, external
