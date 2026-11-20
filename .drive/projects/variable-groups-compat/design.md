@@ -102,9 +102,9 @@ From the response:
 
 Everything preflight returns keeps its type. `updatedAt` is printed the same way by the old list call and the new read, so on a branch that receives `production` or `preview` the trigger values do not change, and upgrading replaces no deployment for this reason.
 
-**A failed call fails the deploy.** A 404 for the project or the branch, or any other error, stops the deploy with a message that names the call, the status, and the project and branch ids, and says that the platform may not offer this read yet. There is no fallback to the old per-key lookup: the old lookup is what gives wrong answers, and falling back would bring them back without a word.
+**A failed call fails the deploy.** An error status, a network failure, or a body that is not JSON or not the expected shape stops the deploy with a message that names the call, the project and branch ids, and the HTTP status when the client reports one, with at most a one-line excerpt of the body. Only a 404 adds that the platform may not offer this read yet; for other failures that sentence would point at the wrong cause. There is no fallback to the old per-key lookup: the old lookup is what gives wrong answers, and falling back would bring them back without a word.
 
-**A paginated answer fails the deploy.** The read returns everything in one response today. If the platform ever pages it, a release that read only the first page would report the rest missing, and there are no patch releases to fix that. So a response that carries a pagination field or a cursor stops the deploy with a message that says this Composer version is too old for the platform.
+**A paginated answer fails the deploy.** The read returns everything in one response today. If the platform ever pages it, a release that read only the first page would report the rest missing, and there are no patch releases to fix that. So an answer that says there is more to fetch (`hasMore: true`, or a non-empty `nextCursor` or `cursor`, at the top level or inside `pagination`) stops the deploy with a message that says this Composer version is too old for the platform. A complete answer in the platform's list envelope, such as `pagination: { nextCursor: null, hasMore: false }`, is accepted.
 
 **Hint commands** are chosen by the class of the group the environment receives.
 
@@ -112,12 +112,12 @@ Everything preflight returns keeps its type. `updatedAt` is printed the same way
 | --- | --- |
 | `production` | `prisma project env add 'NAME=<value>' --project <id> --role production` |
 | `preview` | `prisma project env add 'NAME=<value>' --project <id> --role preview` |
-| `custom` | `prisma variable add 'NAME=<value>' --project <id> --group <name>` |
+| `custom`, or a class Composer does not know | A sentence: `Set NAME in the variable group "<name>" in the Prisma Console.` |
 
-The group's name is quoted for the shell, as the project id is. Two changes from today:
+Two changes from today:
 
 1. **The `--branch <environment>` command is no longer suggested.** It creates a branch override, which the platform is removing.
-2. **A custom group gets the new CLI's command.** `prisma project env` cannot write to a custom group. `prisma variable` is not released yet. A custom group cannot exist in production before the platform turns the feature on, and the platform's rollout releases the CLI first. The slice that builds this checks the command's exact spelling against `prisma/prisma-cli` before it merges. If the command has not shipped by then, the hint for a custom group is a sentence naming the group and Console, with no command.
+2. **A custom group gets a sentence, not a command.** `prisma project env` cannot write to a custom group, and the `prisma variable add … --group` command does not exist yet: on 2026-11-20 it is only in a draft demo pull request on `prisma/prisma-cli` (#395). So the hint names the group in double quotes and says to set the value in the Prisma Console. Core's comment on `UnsetPlatformVariable.commands` says each line is a shell command where one exists, otherwise an instruction. When `prisma variable` ships, the hint becomes its command (see `deferred.md`).
 
 The built-in groups keep `prisma project env` because it works with every CLI version. It is deprecated in the new CLI but keeps working. The hints move to `prisma variable` in a later change.
 

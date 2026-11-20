@@ -12,7 +12,7 @@ export type PlatformVariableReader =
 export interface UnsetPlatformVariable {
   readonly name: string;
   readonly readers: readonly PlatformVariableReader[];
-  /** Shell commands that each set it, in the order to offer them. */
+  /** How to set it, one line each, in the order to offer them: a shell command where one exists, otherwise an instruction. */
   readonly commands: readonly string[];
 }
 

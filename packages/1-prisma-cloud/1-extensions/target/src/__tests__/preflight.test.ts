@@ -27,9 +27,15 @@ const copyOf = <T>(value: T): T => {
   return out.value as T;
 };
 
-/** A resolved container matching `input.container` after the boundary move — preflight narrows it with `prismaCloudContainerOf`. */
 const fakeContainer = (projectId: string, branchId: string | undefined) =>
-  new PrismaCloudContainer({ appName: 'app', environment: 'production' }, projectId, branchId);
+  new PrismaCloudContainer(
+    { appName: 'app', environment: branchId === undefined ? 'production' : 'pr-1' },
+    projectId,
+    branchId,
+    branchId === undefined ? DEFAULT_BRANCH_ID : undefined,
+  );
+
+const DEFAULT_BRANCH_ID = 'br-default';
 
 const build = {
   extension: '@prisma/composer/node',
@@ -43,56 +49,103 @@ interface Row {
   class: 'production' | 'preview';
   key: string;
   branchId: string | null;
-  /** Defaulted by the fake client — only the rotation tests below care what it is. */
-  updatedAt?: string;
-  isManagedBySystem?: boolean;
 }
 
-/** What a row the test did not date reads as. */
+type Source =
+  | { type: 'group'; groupId: string; groupName: string; groupClass: string }
+  | { type: 'branchOverride' }
+  | { type: 'service'; serviceId: string };
+
+interface Entry {
+  key: string;
+  updatedAt?: string;
+  isManagedBySystem?: boolean;
+  source?: Source;
+}
+
+interface Group {
+  id: string;
+  name: string;
+  class: 'production' | 'preview' | 'custom';
+}
+
+/** What a key the test did not date reads as. */
 const DEFAULT_UPDATED_AT = '2026-01-01T00:00:00.000Z';
+
+const RESOLVED_VARIABLES_PATH = '/v1/projects/{projectId}/resolved-variables';
 
 interface FakeState {
   gets: Record<string, string>[];
+  reads: { projectId: string; branchId: string }[];
   posts: Record<string, unknown>[];
   rows: Row[];
-  /** Page size for the env-var listing — unset serves everything in one page. */
-  pageSize?: number;
-  /** When set, the listing reports hasMore with a nextCursor equal to the request's cursor — a broken, non-advancing pagination. */
-  cursorStuck?: boolean;
-  /** When set, the listing always reports hasMore with an ever-advancing nextCursor — pagination that never ends. */
-  cursorRunaway?: boolean;
-  /** When set, the listing reports hasMore but returns no nextCursor — more pages that cannot be fetched. */
-  cursorMissing?: boolean;
+  entries: Entry[];
+  group?: Group;
+  answer?: { status: number; body?: unknown; error?: unknown };
+  throws?: Error;
 }
+
+const emptyState = (): FakeState => ({ gets: [], reads: [], posts: [], rows: [], entries: [] });
+
+const builtInGroup = (branchId: string): Group =>
+  branchId === DEFAULT_BRANCH_ID
+    ? { id: 'grp-production', name: 'production', class: 'production' }
+    : { id: 'grp-preview', name: 'preview', class: 'preview' };
+
+const asText = (body: unknown): unknown =>
+  typeof body === 'string' || body === undefined ? body : JSON.stringify(body);
 
 /** A stubbed Management API client — test file, exempt from the no-bare-cast rule. */
 const fakeClient = (state: FakeState): ManagementApiClient =>
   ({
-    GET: async (_path: string, init: { params: { query: Record<string, string> } }) => {
+    GET: async (
+      path: string,
+      init: {
+        params: { path?: Record<string, string>; query: Record<string, string> };
+      },
+    ) => {
+      if (path === RESOLVED_VARIABLES_PATH) {
+        const projectId = init.params.path?.['projectId'] ?? '';
+        const branchId = init.params.query['branchId'] ?? '';
+        state.reads.push({ projectId, branchId });
+        if (state.throws !== undefined) throw state.throws;
+        if (state.answer !== undefined) {
+          const ok = state.answer.status < 400;
+          return {
+            data: ok ? asText(state.answer.body) : undefined,
+            error: ok ? undefined : state.answer.error,
+            response: new Response(null, { status: state.answer.status }),
+          };
+        }
+        const group = state.group ?? builtInGroup(branchId);
+        return {
+          data: asText({
+            group,
+            data: state.entries.map((entry) => ({
+              key: entry.key,
+              updatedAt: entry.updatedAt ?? DEFAULT_UPDATED_AT,
+              isManagedBySystem: entry.isManagedBySystem ?? false,
+              source: entry.source ?? {
+                type: 'group',
+                groupId: group.id,
+                groupName: group.name,
+                groupClass: group.class,
+              },
+            })),
+          }),
+          error: undefined,
+          response: new Response(null, { status: 200 }),
+        };
+      }
       const q = init.params.query;
       state.gets.push(q);
       const rows = state.rows.filter(
         (r) => r.projectId === q['projectId'] && r.class === q['class'] && r.key === q['key'],
       );
-      const offset = q['cursor'] === undefined ? 0 : Number(q['cursor']);
-      const pageSize = state.pageSize ?? rows.length;
-      const data = rows.slice(offset, offset + pageSize);
-      const pagination =
-        state.cursorStuck === true
-          ? { nextCursor: String(offset), hasMore: true }
-          : state.cursorRunaway === true
-            ? { nextCursor: String(offset + 1), hasMore: true }
-            : state.cursorMissing === true
-              ? { nextCursor: null, hasMore: true }
-              : {
-                  nextCursor:
-                    offset + data.length < rows.length ? String(offset + data.length) : null,
-                  hasMore: offset + data.length < rows.length,
-                };
       return {
         data: {
-          data: data.map((r) => ({ ...r, updatedAt: r.updatedAt ?? DEFAULT_UPDATED_AT })),
-          pagination,
+          data: rows.map((r) => ({ ...r, updatedAt: DEFAULT_UPDATED_AT })),
+          pagination: { nextCursor: null, hasMore: false },
         },
         error: undefined,
         response: new Response(null, { status: 200 }),
@@ -267,74 +320,315 @@ const failureOf = async (run: Promise<unknown>): Promise<string> => {
   return error.message;
 };
 
-describe('the deploy check reads which variables exist and sets none', () => {
+describe('the deploy check reads which variables the branch receives and sets none', () => {
   let state: FakeState;
 
   beforeEach(() => {
-    state = { gets: [], posts: [], rows: [] };
+    state = emptyState();
   });
 
-  test('in production, a variable with a production row passes', async () => {
-    state.rows = [
-      { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null },
-    ];
-
-    await preflightWith(
-      { graph: requiredSecretGraph(), ...production },
-      { client: fakeClient(state) },
+  const manyNamesGraph = (names: readonly string[]) =>
+    Load(
+      appRoot('app', ({ provision }) => {
+        provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
+          id: 'ingest',
+          input: Object.fromEntries(
+            names.map((name) => [name.toLowerCase(), provision(variable.secret({ name }))]),
+          ),
+        });
+      }),
     );
 
-    expect(state.gets).toEqual([
-      { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY' },
-    ]);
-  });
+  test("a key from the branch's group is present, and its time is handed back", async () => {
+    state.entries = [{ key: 'STRIPE_SECRET_KEY', updatedAt: '2026-05-05T12:00:00.000Z' }];
 
-  test('in a named environment, a preview-wide row counts as a value', async () => {
-    state.rows = [
-      { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: null },
-    ];
-
-    await preflightWith(
+    const result = await preflightWith(
       { graph: requiredSecretGraph(), ...preview },
       { client: fakeClient(state) },
     );
 
-    expect(state.gets[0]?.['class']).toBe('preview');
+    expect([...result.updatedAt]).toEqual([['STRIPE_SECRET_KEY', '2026-05-05T12:00:00.000Z']]);
+    expect(result.findings).toEqual({ unset: [] });
   });
 
-  test("in a named environment, this branch's own row counts as a value", async () => {
-    state.rows = [
-      { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: 'br-1' },
+  test("a key from the branch's override is present, and its time is handed back", async () => {
+    state.entries = [
+      {
+        key: 'STRIPE_SECRET_KEY',
+        updatedAt: '2026-07-07T12:00:00.000Z',
+        source: { type: 'branchOverride' },
+      },
     ];
 
-    await preflightWith(
+    const result = await preflightWith(
       { graph: requiredSecretGraph(), ...preview },
       { client: fakeClient(state) },
     );
+
+    expect([...result.updatedAt]).toEqual([['STRIPE_SECRET_KEY', '2026-07-07T12:00:00.000Z']]);
   });
 
-  test("in a named environment, another branch's row does not count", async () => {
-    state.rows = [
-      { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: 'br-2' },
-    ];
+  test('a key the read does not list is unset and has no time', async () => {
+    state.entries = [{ key: 'SOMETHING_ELSE' }];
 
-    const message = await failureOf(
-      preflightWith({ graph: requiredSecretGraph(), ...preview }, { client: fakeClient(state) }),
+    const result = await preflightWith(
+      { graph: secretGraph(), ...preview },
+      { client: fakeClient(state) },
     );
 
-    expect(message).toContain('STRIPE_SECRET_KEY');
+    expect(result.findings.unset.map((variable) => variable.name)).toEqual(['STRIPE_SECRET_KEY']);
+    expect(result.updatedAt.has('STRIPE_SECRET_KEY')).toBe(false);
   });
 
-  test('in production, a production row with a branch does not count', async () => {
-    state.rows = [
-      { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: 'br-2' },
-    ];
+  test('a listed key the platform manages itself fails, naming the variable', async () => {
+    state.entries = [{ key: 'STRIPE_SECRET_KEY', isManagedBySystem: true }];
 
     const message = await failureOf(
-      preflightWith({ graph: requiredSecretGraph(), ...production }, { client: fakeClient(state) }),
+      preflightWith({ graph: secretGraph(), ...preview }, { client: fakeClient(state) }),
     );
 
-    expect(message).toContain('STRIPE_SECRET_KEY');
+    expect(message).toContain(
+      '"STRIPE_SECRET_KEY" is a platform variable that Prisma Cloud manages itself',
+    );
+  });
+
+  test('reads once per deploy, however many names the app has', async () => {
+    const names = Array.from({ length: 20 }, (_, index) => `KEY_${index}`);
+
+    await preflightWith(
+      { graph: manyNamesGraph(names), ...production },
+      { client: fakeClient(state) },
+    );
+
+    expect(state.reads).toHaveLength(1);
+    expect(state.gets).toEqual([]);
+  });
+
+  test('production reads the project default branch', async () => {
+    await preflightWith({ graph: secretGraph(), ...production }, { client: fakeClient(state) });
+
+    expect(state.reads).toEqual([{ projectId: 'proj', branchId: DEFAULT_BRANCH_ID }]);
+  });
+
+  test('another environment reads its own branch', async () => {
+    await preflightWith({ graph: secretGraph(), ...preview }, { client: fakeClient(state) });
+
+    expect(state.reads).toEqual([{ projectId: 'proj', branchId: 'br-1' }]);
+  });
+
+  test('a graph with no platform variable makes no platform call and returns nothing', async () => {
+    const result = await preflightWith(
+      { graph: noSecretGraph(), ...production },
+      { client: fakeClient(state) },
+    );
+
+    expect(state.reads).toEqual([]);
+    expect(state.gets).toEqual([]);
+    expect(result).toEqual({ updatedAt: new Map(), findings: { unset: [] } });
+  });
+
+  test('a value Composer generates needs no platform check', async () => {
+    await preflightWith({ graph: generatedGraph(), ...production }, { client: fakeClient(state) });
+
+    expect(state.reads).toEqual([]);
+  });
+
+  test('a literal-bound param never reaches the platform', async () => {
+    await preflightWith(
+      { graph: literalParamGraph(), ...production },
+      { client: fakeClient(state) },
+    );
+
+    expect(state.reads).toEqual([]);
+    expect(state.gets).toEqual([]);
+  });
+
+  const COULD_NOT_READ =
+    'Deploy failed. Composer could not read which variables branch "br-1" of project "proj" receives: GET /v1/projects/proj/resolved-variables?branchId=br-1';
+
+  const failedReadMessage = async () => {
+    const message = await failureOf(
+      preflightWith({ graph: secretGraph(), ...preview }, { client: fakeClient(state) }),
+    );
+    expect(state.reads).toHaveLength(1);
+    expect(state.gets).toEqual([]);
+    expect(state.posts).toEqual([]);
+    return message;
+  };
+
+  describe('a failed read fails the deploy, naming the call, the project and the branch', () => {
+    test.each([
+      ['an unknown project', { code: 'not-found', message: 'Project not found' }],
+      ['an unknown branch', { code: 'not-found', message: 'Branch not found' }],
+    ])('%s answers 404, which says the platform may not offer the read', async (_case, error) => {
+      state.answer = { status: 404, error: { error } };
+
+      expect(await failedReadMessage()).toBe(
+        `${COULD_NOT_READ} answered HTTP 404: ${JSON.stringify({ error })}. ` +
+          'The platform may not offer this read yet, and this Composer version needs it to check platform variables.',
+      );
+    });
+
+    test('a server error names its status and body, and does not blame a missing read', async () => {
+      state.answer = { status: 500, error: { error: { code: 'internal', message: 'boom' } } };
+
+      expect(await failedReadMessage()).toBe(
+        `${COULD_NOT_READ} answered HTTP 500: {"error":{"code":"internal","message":"boom"}}.`,
+      );
+    });
+
+    test('an error status with an empty body names the status', async () => {
+      state.answer = { status: 502 };
+
+      expect(await failedReadMessage()).toBe(`${COULD_NOT_READ} answered HTTP 502.`);
+    });
+
+    test('a network failure names the call and keeps the cause', async () => {
+      const cause = new TypeError('fetch failed');
+      state.throws = cause;
+
+      const error = await preflightWith(
+        { graph: secretGraph(), ...preview },
+        { client: fakeClient(state) },
+      ).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe(`${COULD_NOT_READ} failed: fetch failed.`);
+      expect((error as Error).cause).toBe(cause);
+    });
+
+    test('a 200 whose body is not JSON names the status and a short excerpt', async () => {
+      state.answer = { status: 200, body: '<html>\n  <body>Maintenance</body>\n</html>' };
+
+      expect(await failedReadMessage()).toBe(
+        `${COULD_NOT_READ} answered HTTP 200 with a body that is not JSON: <html> <body>Maintenance</body> </html>.`,
+      );
+    });
+
+    test('an error status whose body is a whole HTML page shows one short line of it', async () => {
+      const page = `<html>\n<head><title>502 Bad Gateway</title></head>\n<body>${'x'.repeat(5000)}</body>\n</html>`;
+      state.answer = { status: 502, error: page };
+
+      const message = await failedReadMessage();
+
+      expect(message).toStartWith(
+        `${COULD_NOT_READ} answered HTTP 502: <html> <head><title>502 Bad Gateway</title></head> <body>xxx`,
+      );
+      expect(message).toEndWith('….');
+      expect(message).not.toContain('\n');
+      expect(message.length).toBeLessThan(COULD_NOT_READ.length + 160);
+    });
+
+    test('a thrown error that carries a status names it, and the sentence ends with one full stop', async () => {
+      state.throws = Object.assign(
+        new Error('The management API rejected the service token from PRISMA_SERVICE_TOKEN.'),
+        { status: 401 },
+      );
+
+      expect(await failedReadMessage()).toBe(
+        `${COULD_NOT_READ} failed with HTTP 401: The management API rejected the service token from PRISMA_SERVICE_TOKEN.`,
+      );
+    });
+
+    test('a body without the group names the call and says the answer may have changed', async () => {
+      state.answer = { status: 200, body: { data: [] } };
+
+      const message = await failedReadMessage();
+
+      expect(message).toStartWith(
+        `${COULD_NOT_READ} answered with a body this Composer version cannot read: `,
+      );
+      expect(message).toEndWith(
+        "The platform's answer may have changed, and a newer Composer version may read it.",
+      );
+    });
+  });
+
+  test.each([
+    ['a pagination object with more to fetch', { pagination: { nextCursor: 'c1', hasMore: true } }],
+    ['a pagination object with a cursor', { pagination: { nextCursor: 'c1', hasMore: false } }],
+    ['a next cursor', { nextCursor: 'c1' }],
+    ['a cursor', { cursor: 'c1' }],
+    ['a more-pages flag', { hasMore: true }],
+  ])(
+    'an answer that says it has more, with %s, fails the deploy as too old for the platform',
+    async (_case, extra) => {
+      state.answer = { status: 200, body: { group: builtInGroup('br-1'), data: [], ...extra } };
+
+      const message = await failedReadMessage();
+
+      expect(message).toStartWith(`${COULD_NOT_READ} answered with one page of a longer list.`);
+      expect(message).toContain('too old for the platform');
+    },
+  );
+
+  test.each([
+    ['a complete pagination object', { pagination: { nextCursor: null, hasMore: false } }],
+    ['top-level fields that say nothing is left', { nextCursor: null, hasMore: false, cursor: '' }],
+  ])('a complete answer in a list envelope, with %s, is accepted', async (_case, extra) => {
+    state.answer = {
+      status: 200,
+      body: {
+        group: builtInGroup('br-1'),
+        data: [
+          { key: 'STRIPE_SECRET_KEY', updatedAt: DEFAULT_UPDATED_AT, isManagedBySystem: false },
+        ],
+        ...extra,
+      },
+    };
+
+    const result = await preflightWith(
+      { graph: requiredSecretGraph(), ...preview },
+      { client: fakeClient(state) },
+    );
+
+    expect([...result.updatedAt]).toEqual([['STRIPE_SECRET_KEY', DEFAULT_UPDATED_AT]]);
+  });
+
+  describe('the commands that set a missing variable follow the group the branch receives', () => {
+    const commandsFor = async (group: Group | undefined, environment = preview) => {
+      if (group !== undefined) state.group = group;
+      const result = await preflightWith(
+        { graph: secretGraph(), ...environment },
+        { client: fakeClient(state) },
+      );
+      return result.findings.unset[0]?.commands;
+    };
+
+    test('production', async () => {
+      expect(await commandsFor(undefined, production)).toEqual([
+        "prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --role production",
+      ]);
+    });
+
+    test('preview', async () => {
+      expect(await commandsFor(undefined)).toEqual([
+        "prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --role preview",
+      ]);
+    });
+
+    test('a custom group is named in a sentence, since no command writes to it', async () => {
+      expect(await commandsFor({ id: 'grp-1', name: "team's staging", class: 'custom' })).toEqual([
+        `Set STRIPE_SECRET_KEY in the variable group "team's staging" in the Prisma Console.`,
+      ]);
+    });
+
+    test('a group of a class Composer does not know gets the custom-group sentence', async () => {
+      expect(
+        await commandsFor({ id: 'grp-2', name: 'qa', class: 'experimental' as Group['class'] }),
+      ).toEqual([`Set STRIPE_SECRET_KEY in the variable group "qa" in the Prisma Console.`]);
+    });
+
+    test('no command sets a branch override', async () => {
+      const all = [
+        ...((await commandsFor(undefined, production)) ?? []),
+        ...((await commandsFor(undefined)) ?? []),
+        ...((await commandsFor({ id: 'grp-1', name: 'staging', class: 'custom' })) ?? []),
+      ];
+
+      expect(all).toHaveLength(3);
+      expect(all.join('\n')).not.toContain('--branch');
+    });
   });
 
   test('sets no platform variable, even when the app secrets hold a value for a missing name', async () => {
@@ -346,11 +640,11 @@ describe('the deploy check reads which variables exist and sets none', () => {
       ).catch(() => undefined);
     });
 
-    expect(state.gets.length).toBeGreaterThan(0);
+    expect(state.reads.length).toBeGreaterThan(0);
     expect(state.posts).toEqual([]);
   });
 
-  test('a required variable with no row fails in production, naming the reader and the one command', async () => {
+  test('a required variable with no value fails in production, naming the reader and the one command', async () => {
     const message = await failureOf(
       preflightWith({ graph: requiredSecretGraph(), ...production }, { client: fakeClient(state) }),
     );
@@ -363,26 +657,20 @@ describe('the deploy check reads which variables exist and sets none', () => {
     );
   });
 
-  test('in any other environment the preview-wide command comes first and the branch command second, quoted to paste', async () => {
+  test('a required variable with no value on a custom group fails, naming the group', async () => {
+    state.group = { id: 'grp-1', name: 'staging', class: 'custom' };
+
     const message = await failureOf(
-      preflightWith(
-        {
-          graph: requiredSecretGraph(),
-          container: fakeContainer('proj', 'br_1'),
-          environment: `it's "$HOME" x`,
-        },
-        { client: fakeClient(state) },
-      ),
+      preflightWith({ graph: requiredSecretGraph(), ...preview }, { client: fakeClient(state) }),
     );
 
     expect(message).toEndWith(
       'Set it on the platform, then deploy again:\n' +
-        "  - prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --role preview\n" +
-        `  - prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --branch 'it'\\''s "$HOME" x'`,
+        '  - Set STRIPE_SECRET_KEY in the variable group "staging" in the Prisma Console.',
     );
   });
 
-  test('a variable with no row that nothing requires passes and is reported with its reader and commands', async () => {
+  test('a variable with no value that nothing requires passes and is reported with its reader and commands', async () => {
     const result = await preflightWith(
       { graph: secretGraph(), ...preview },
       { client: fakeClient(state) },
@@ -395,25 +683,11 @@ describe('the deploy check reads which variables exist and sets none', () => {
           readers: [{ kind: 'field', service: 'app.ingest', path: 'stripeKey' }],
           commands: [
             "prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --role preview",
-            "prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --branch 'pr-1'",
           ],
         },
       ],
     });
     expect(result.updatedAt.size).toBe(0);
-  });
-
-  test('a variable with a row is not a finding', async () => {
-    state.rows = [
-      { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null },
-    ];
-
-    const result = await preflightWith(
-      { graph: secretGraph(), ...production },
-      { client: fakeClient(state) },
-    );
-
-    expect(result.findings).toEqual({ unset: [] });
   });
 
   test('reports how many names it checked with its findings, and nothing when it fails', async () => {
@@ -426,9 +700,7 @@ describe('the deploy check reads which variables exist and sets none', () => {
 
     const first = await run(secretGraph());
     await run(requiredSecretGraph()).catch(() => undefined);
-    state.rows = [
-      { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null },
-    ];
+    state.entries = [{ key: 'STRIPE_SECRET_KEY' }];
     await run(secretGraph());
 
     expect(first.findings.unset.map((variable) => variable.name)).toEqual(['STRIPE_SECRET_KEY']);
@@ -438,110 +710,14 @@ describe('the deploy check reads which variables exist and sets none', () => {
     ]);
   });
 
-  test('a graph with no platform variable makes no platform call and returns nothing', async () => {
-    const result = await preflightWith(
-      { graph: noSecretGraph(), ...production },
-      { client: fakeClient(state) },
-    );
-
-    expect(state.gets).toEqual([]);
-    expect(result).toEqual({ updatedAt: new Map(), findings: { unset: [] } });
-  });
-
-  test('a value Composer generates needs no platform check', async () => {
-    await preflightWith({ graph: generatedGraph(), ...production }, { client: fakeClient(state) });
-
-    expect(state.gets).toEqual([]);
-  });
-
-  test('follows pagination — a present name on a later page is not reported missing', async () => {
-    const pages = [
-      { data: [], pagination: { nextCursor: 'c1', hasMore: true } },
-      {
-        data: [{ branchId: null, updatedAt: DEFAULT_UPDATED_AT }],
-        pagination: { nextCursor: null, hasMore: false },
-      },
-    ];
-    const queries: Record<string, string>[] = [];
-    let call = 0;
-    const client = {
-      GET: async (_path: string, init: { params: { query: Record<string, string> } }) => {
-        queries.push(init.params.query);
-        return {
-          data: pages[call++],
-          error: undefined,
-          response: new Response(null, { status: 200 }),
-        };
-      },
-    } as unknown as ManagementApiClient;
-
-    await preflightWith({ graph: requiredSecretGraph(), ...production }, { client });
-
-    expect(call).toBe(2);
-    expect(queries[1]?.['cursor']).toBe('c1');
-  });
-
-  test('a failed list call fails the deploy, naming the variable', async () => {
-    const client = {
-      GET: async () => ({
-        data: undefined,
-        error: { code: 'internal', message: 'boom' },
-        response: new Response(null, { status: 500 }),
-      }),
-    } as unknown as ManagementApiClient;
-
-    const message = await failureOf(
-      preflightWith({ graph: secretGraph(), ...production }, { client }),
-    );
-
-    expect(message).toBe(
-      'deploy preflight: Prisma Management API error listing "STRIPE_SECRET_KEY": {"code":"internal","message":"boom"}.',
-    );
-  });
-
-  test('at most eight list calls run at once', async () => {
-    const names = Array.from({ length: 20 }, (_, index) => `KEY_${index}`);
-    const graph = Load(
-      appRoot('app', ({ provision }) => {
-        provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
-          id: 'ingest',
-          input: Object.fromEntries(
-            names.map((name) => [name.toLowerCase(), provision(variable.secret({ name }))]),
-          ),
-        });
-      }),
-    );
-    let running = 0;
-    let most = 0;
-    const listed: string[] = [];
-    const client = {
-      GET: async (_path: string, init: { params: { query: Record<string, string> } }) => {
-        running += 1;
-        most = Math.max(most, running);
-        await new Promise((resolve) => setTimeout(resolve, 2));
-        running -= 1;
-        listed.push(init.params.query['key'] ?? '');
-        return {
-          data: { data: [], pagination: { nextCursor: null, hasMore: false } },
-          error: undefined,
-          response: new Response(null, { status: 200 }),
-        };
-      },
-    } as unknown as ManagementApiClient;
-
-    await preflightWith({ graph, ...production }, { client });
-
-    expect(most).toBe(8);
-    expect(listed.sort()).toEqual([...names].sort());
-  });
-
-  test('the same platform name bound by two services is listed once, and the finding names both readers', async () => {
+  test('the same platform name bound by two services is checked once, and the finding names both readers', async () => {
     const result = await preflightWith(
       { graph: sharedNestedSecretGraph(), ...production },
       { client: fakeClient(state) },
     );
 
-    expect(state.gets).toHaveLength(1);
+    expect(state.reads).toHaveLength(1);
+    expect(result.findings.unset).toHaveLength(1);
     expect(result.findings.unset[0]?.readers).toEqual([
       { kind: 'field', service: 'app.web', path: 'stripe' },
       { kind: 'field', service: 'app.ingest', path: 'stripe.key' },
@@ -609,7 +785,7 @@ describe('the deploy check reads which variables exist and sets none', () => {
     expect(message).not.toContain('STRIPE_WEBHOOK_SECRET');
   });
 
-  test('a variable in an array position with no row is required, whatever the schema says', async () => {
+  test('a variable in an array position with no value is required, whatever the schema says', async () => {
     const graph = Load(
       appRoot('app', ({ provision }) => {
         provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
@@ -640,49 +816,6 @@ describe('the deploy check reads which variables exist and sets none', () => {
     expect(message).toStartWith('invalid input for service "app.ingest"');
     expect(message).toContain('region is required');
     expect(message).not.toContain('platform variable a service needs');
-  });
-
-  test('a row the environment sees that the platform manages itself fails, naming the variable', async () => {
-    state.rows = [
-      {
-        projectId: 'proj',
-        class: 'preview',
-        key: 'STRIPE_SECRET_KEY',
-        branchId: null,
-        isManagedBySystem: true,
-      },
-    ];
-
-    const message = await failureOf(
-      preflightWith({ graph: secretGraph(), ...preview }, { client: fakeClient(state) }),
-    );
-
-    expect(message).toContain(
-      '"STRIPE_SECRET_KEY" is a platform variable that Prisma Cloud manages itself',
-    );
-  });
-
-  test("another branch's row that the platform manages is not seen", async () => {
-    state.rows = [
-      {
-        projectId: 'proj',
-        class: 'preview',
-        key: 'STRIPE_SECRET_KEY',
-        branchId: 'br-2',
-        isManagedBySystem: true,
-      },
-    ];
-
-    await preflightWith({ graph: secretGraph(), ...preview }, { client: fakeClient(state) });
-  });
-
-  test('a literal-bound param never reaches the platform — no calls at all', async () => {
-    await preflightWith(
-      { graph: literalParamGraph(), ...production },
-      { client: fakeClient(state) },
-    );
-
-    expect(state.gets).toEqual([]);
   });
 
   test("a secret a service receives through a module's input is named as read by the service", async () => {
@@ -742,129 +875,6 @@ describe('the deploy check reads which variables exist and sets none', () => {
     expect(JSON.stringify({ ...result, updatedAt: [...result.updatedAt] })).not.toContain(sentinel);
     expect(message).not.toContain(sentinel);
   });
-
-  describe('env-var listing pagination (bounded — drivePagesAsync)', () => {
-    test('a visible row beyond the first page still counts as present', async () => {
-      state.pageSize = 1;
-      state.rows = [
-        { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: 'br-other' },
-        { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: null },
-      ];
-
-      await preflightWith(
-        { graph: requiredSecretGraph(), ...preview },
-        { client: fakeClient(state) },
-      );
-
-      expect(state.gets).toHaveLength(2);
-    });
-
-    test('a non-advancing cursor fails as broken pagination instead of looping', async () => {
-      state.pageSize = 1;
-      state.cursorStuck = true;
-
-      await expect(
-        preflightWith({ graph: secretGraph(), ...production }, { client: fakeClient(state) }),
-      ).rejects.toThrow(/pagination appears broken.*possibly incomplete listing/);
-    });
-
-    test('pagination that never ends fails at the page cap instead of hanging', async () => {
-      state.pageSize = 1;
-      state.cursorRunaway = true;
-
-      await expect(
-        preflightWith({ graph: secretGraph(), ...production }, { client: fakeClient(state) }),
-      ).rejects.toThrow(/did not finish within 1000 pages/);
-    });
-
-    test('more pages reported without a cursor fails instead of accepting a partial listing', async () => {
-      state.pageSize = 1;
-      state.cursorMissing = true;
-
-      await expect(
-        preflightWith({ graph: secretGraph(), ...production }, { client: fakeClient(state) }),
-      ).rejects.toThrow(/reported more pages but returned no cursor/);
-    });
-  });
-
-  describe('the rotation timestamps it hands back', () => {
-    const row = (branchId: string | null, updatedAt: string): Row => ({
-      projectId: 'proj',
-      class: 'preview',
-      key: 'STRIPE_SECRET_KEY',
-      branchId,
-      updatedAt,
-    });
-    const timestampsFor = async () =>
-      (
-        await preflightWith(
-          {
-            graph: secretGraph(),
-            container: fakeContainer('proj', 'br-1'),
-            environment: 'feature',
-          },
-          { client: fakeClient(state) },
-        )
-      ).updatedAt;
-
-    test('a name present on the platform reports when it was last written', async () => {
-      state.rows = [
-        {
-          projectId: 'proj',
-          class: 'production',
-          key: 'STRIPE_SECRET_KEY',
-          branchId: null,
-          updatedAt: '2026-05-05T12:00:00.000Z',
-        },
-      ];
-
-      const { updatedAt } = await preflightWith(
-        { graph: secretGraph(), ...production },
-        { client: fakeClient(state) },
-      );
-
-      expect([...updatedAt]).toEqual([['STRIPE_SECRET_KEY', '2026-05-05T12:00:00.000Z']]);
-    });
-
-    test("with a class row and this branch's row, the branch row's time is handed back", async () => {
-      state.rows = [row(null, '2026-05-05T12:00:00.000Z'), row('br-1', '2026-07-07T12:00:00.000Z')];
-
-      expect((await timestampsFor()).get('STRIPE_SECRET_KEY')).toBe('2026-07-07T12:00:00.000Z');
-    });
-
-    test('the branch row wins even when the class row is newer', async () => {
-      state.rows = [row(null, '2026-08-08T12:00:00.000Z'), row('br-1', '2026-07-07T12:00:00.000Z')];
-
-      expect((await timestampsFor()).get('STRIPE_SECRET_KEY')).toBe('2026-07-07T12:00:00.000Z');
-    });
-
-    test('a newer class row under a branch row changes nothing', async () => {
-      state.rows = [row(null, '2026-05-05T12:00:00.000Z'), row('br-1', '2026-07-07T12:00:00.000Z')];
-      const before = await timestampsFor();
-      state.rows = [row(null, '2026-09-09T12:00:00.000Z'), row('br-1', '2026-07-07T12:00:00.000Z')];
-
-      expect(await timestampsFor()).toEqual(before);
-    });
-
-    test('with no branch row, the class row is handed back', async () => {
-      state.rows = [row(null, '2026-05-05T12:00:00.000Z')];
-
-      expect((await timestampsFor()).get('STRIPE_SECRET_KEY')).toBe('2026-05-05T12:00:00.000Z');
-    });
-
-    test('a row belonging to ANOTHER branch is not in scope and does not date this one', async () => {
-      state.rows = [
-        row(null, '2026-05-05T12:00:00.000Z'),
-        row('br-other', '2026-09-09T12:00:00.000Z'),
-      ];
-
-      expect((await timestampsFor()).get('STRIPE_SECRET_KEY')).toBe('2026-05-05T12:00:00.000Z');
-    });
-
-    test('a name with no row has no time', async () => {
-      expect((await timestampsFor()).has('STRIPE_SECRET_KEY')).toBe(false);
-    });
-  });
 });
 
 describe('runPreflight — a COMPOSER_ key that changes owner in the move to full addresses (ADR-0057)', () => {
@@ -889,7 +899,7 @@ describe('runPreflight — a COMPOSER_ key that changes owner in the move to ful
   let state: FakeState;
 
   beforeEach(() => {
-    state = { gets: [], posts: [], rows: [] };
+    state = emptyState();
   });
 
   const preflight = () =>
@@ -929,8 +939,11 @@ describe('runPreflight — a COMPOSER_ key that changes owner in the move to ful
     expect(String(error)).toContain(`--branch 'it'\\''s "$HOME" x'`);
   });
 
-  test('passes once that variable is deleted', async () => {
+  test('passes once that variable is deleted, and an app with no platform variable reads none', async () => {
     await preflight();
+
+    expect(state.gets.length).toBeGreaterThan(0);
+    expect(state.reads).toEqual([]);
   });
 
   test("passes after the move, when the old owner's row has its new key", async () => {
@@ -984,8 +997,7 @@ describe('runPreflight — a chain of COMPOSER_ keys that change owner', () => {
 
   test('reports every link in one run', async () => {
     const state: FakeState = {
-      gets: [],
-      posts: [],
+      ...emptyState(),
       rows: [row('COMPOSER_SHOP_X_ORIGIN'), row('COMPOSER_SHOP_SHOP_X_ORIGIN')],
     };
 
@@ -997,8 +1009,7 @@ describe('runPreflight — a chain of COMPOSER_ keys that change owner', () => {
 
   test('passes once every node has moved', async () => {
     const state: FakeState = {
-      gets: [],
-      posts: [],
+      ...emptyState(),
       rows: [
         row('COMPOSER_SHOP_X_ORIGIN'),
         row('COMPOSER_SHOP_SHOP_X_ORIGIN'),
@@ -1023,10 +1034,7 @@ describe('preflight names', () => {
 
     expect(
       await failureOf(
-        preflightWith(
-          { graph, ...production },
-          { client: fakeClient({ gets: [], posts: [], rows: [] }) },
-        ),
+        preflightWith({ graph, ...production }, { client: fakeClient(emptyState()) }),
       ),
     ).toBe(
       'input key "stripe.key" of service "app.web" is bound to a source that is not a platform variable. Provision variable() or variable.secret() from @prisma/composer-prisma-cloud in the app root and pass its value down.',
@@ -1046,7 +1054,7 @@ describe('the deploy check of platform variable nodes', () => {
   let state: FakeState;
 
   beforeEach(() => {
-    state = { gets: [], posts: [], rows: [] };
+    state = emptyState();
   });
 
   const commands = (name: string) => [
@@ -1065,7 +1073,7 @@ describe('the deploy check of platform variable nodes', () => {
     );
 
   test('a required unset plain node fails the deploy, naming it and its reader', async () => {
-    state.rows = [{ projectId: 'proj', class: 'production', key: 'EMAIL_KEY', branchId: null }];
+    state.entries = [{ key: 'EMAIL_KEY' }];
 
     const message = await failureOf(
       preflightWith(
@@ -1079,7 +1087,7 @@ describe('the deploy check of platform variable nodes', () => {
   });
 
   test('a required unset secret node fails the deploy', async () => {
-    state.rows = [{ projectId: 'proj', class: 'production', key: 'EMAIL_FROM', branchId: null }];
+    state.entries = [{ key: 'EMAIL_FROM' }];
 
     const message = await failureOf(
       preflightWith(
@@ -1111,11 +1119,8 @@ describe('the deploy check of platform variable nodes', () => {
     ]);
   });
 
-  test('a node with a row passes and its row time is handed back', async () => {
-    state.rows = [
-      { projectId: 'proj', class: 'production', key: 'EMAIL_FROM', branchId: null },
-      { projectId: 'proj', class: 'production', key: 'EMAIL_KEY', branchId: null },
-    ];
+  test('a node the branch receives passes and its time is handed back', async () => {
+    state.entries = [{ key: 'EMAIL_FROM' }, { key: 'EMAIL_KEY' }];
 
     const result = await preflightWith(
       { graph: mailGraph(requiresSecrets('key')), ...production },
@@ -1237,12 +1242,8 @@ describe('the deploy check of platform variable nodes', () => {
 });
 
 describe("preflight identifies Composer on the caller's client", () => {
-  test("every environment-variable lookup through the caller's client carries Composer's headers", async () => {
-    const state: FakeState = {
-      gets: [],
-      posts: [],
-      rows: [{ projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null }],
-    };
+  test("the read of the branch's variables through the caller's client carries Composer's headers", async () => {
+    const state: FakeState = { ...emptyState(), entries: [{ key: 'STRIPE_SECRET_KEY' }] };
     const headersSeen: unknown[] = [];
     const fake = fakeClient(state);
     const caller = {
@@ -1262,7 +1263,8 @@ describe("preflight identifies Composer on the caller's client", () => {
       credentials: { workspaceId: undefined, client: caller },
     });
 
-    expect(headersSeen.length).toBeGreaterThan(0);
+    expect(state.reads).toHaveLength(1);
+    expect(headersSeen).toHaveLength(1);
     for (const headers of headersSeen) {
       expect(headers).toMatchObject({
         'x-prisma-client-name': 'composer',
