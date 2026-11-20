@@ -134,6 +134,8 @@ describe('withComposerIdentity', () => {
     const { client, requests } = callerClient();
     const view = withComposerIdentity(client);
     const methods = Object.keys(client).filter((name) => !NOT_REQUESTS.has(name));
+    expect(methods).toContain('GET');
+    expect(methods).toHaveLength(9);
 
     for (const name of methods) {
       const send: unknown = Reflect.get(view, name);

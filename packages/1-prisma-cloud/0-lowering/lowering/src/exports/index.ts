@@ -13,7 +13,6 @@ export {
   layer as managementClientLayer,
   type ManagementApiClient,
   ManagementClient,
-  withComposerIdentity,
 } from '../client.ts';
 export * from '../container.ts';
 export * from '../credentials.ts';
