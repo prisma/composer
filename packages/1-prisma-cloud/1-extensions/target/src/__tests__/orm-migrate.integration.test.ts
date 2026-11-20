@@ -259,6 +259,52 @@ describe.skipIf(pg === undefined)('applyOrmMigration — authored baseline (repl
       fs.rmSync(otherDir, { recursive: true, force: true });
     }
   });
+
+  test("the recovery commands name the database resource's prisma.config.ts when it is not the one in the working directory", async () => {
+    const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-pn-other-'));
+    try {
+      const ref = await resolveTargetRef(otherDir, gadgetContractJson);
+      const error = await rejection(
+        applyOrmMigration({
+          url,
+          contractJson: gadgetContractJson,
+          migrationsDir: otherDir,
+          ref,
+          configPath: path.join(process.cwd(), 'modules', 'catalog', 'prisma.config.ts'),
+        }),
+      );
+
+      expect(error.message.split('\n').slice(3, 5)).toEqual([
+        '→ Preview the changes: prisma db update --dry-run --config modules/catalog/prisma.config.ts --db <url>',
+        '→ Reconcile the database: prisma db update --config modules/catalog/prisma.config.ts --db <url>',
+      ]);
+    } finally {
+      fs.rmSync(otherDir, { recursive: true, force: true });
+    }
+  });
+
+  test('the recovery commands leave out --config for the prisma.config.ts in the working directory', async () => {
+    const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-pn-other-'));
+    try {
+      const ref = await resolveTargetRef(otherDir, gadgetContractJson);
+      const error = await rejection(
+        applyOrmMigration({
+          url,
+          contractJson: gadgetContractJson,
+          migrationsDir: otherDir,
+          ref,
+          configPath: path.join(process.cwd(), 'prisma.config.ts'),
+        }),
+      );
+
+      expect(error.message.split('\n').slice(3, 5)).toEqual([
+        '→ Preview the changes: prisma db update --dry-run --db <url>',
+        '→ Reconcile the database: prisma db update --db <url>',
+      ]);
+    } finally {
+      fs.rmSync(otherDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe.skipIf(pg === undefined)(

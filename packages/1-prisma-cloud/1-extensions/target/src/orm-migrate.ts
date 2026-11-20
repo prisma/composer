@@ -40,6 +40,7 @@ import {
   spaceMigrationDirectory,
   spaceRefsDirectory,
 } from '@prisma/orm-toolchain/migration-tools/spaces';
+import { relative } from 'pathe';
 import type { PnExtensionPack } from './orm-config.ts';
 import { normalizeSslMode, withConnectionRetry } from './pg-connection.ts';
 
@@ -239,7 +240,8 @@ export async function isAtTargetRef(url: string, ref: PnTargetRef): Promise<bool
  * ({@link resolveTargetRef} — both resolved by the lowering, which also keys
  * the OrmMigration resource on them). `refName` (the resource's `targetRef`,
  * when set) is threaded into `migrate` so PN targets the named ref's hash and
- * plans an invariant-bearing path.
+ * plans an invariant-bearing path. `configPath` is the database resource's
+ * `prisma.config.ts`, which the ORM's recovery commands name with `--config`.
  */
 export async function applyOrmMigration(opts: {
   readonly url: string;
@@ -249,6 +251,7 @@ export async function applyOrmMigration(opts: {
   readonly refName?: string;
   /** The project's declared extension packs — threaded into PN's aggregate (multi-space) pipeline. */
   readonly extensionPacks?: readonly PnExtensionPack[];
+  readonly configPath?: string;
 }): Promise<OrmMigrationOutcome> {
   const connection = normalizeSslMode(opts.url);
   // Retry the connect+operation past PPG's cold-start (see withConnectionRetry).
@@ -263,9 +266,17 @@ export async function applyOrmMigration(opts: {
         opts.ref,
         opts.refName,
         opts.extensionPacks ?? [],
+        opts.configPath,
       ),
     { shouldRetry: (error) => !(error instanceof OrmMigrationError) },
   );
+}
+
+/** The `--config` the ORM's commands repeat: none for the `prisma.config.ts` they find in the working directory themselves. */
+function printedConfigPath(configPath: string | undefined): string | undefined {
+  if (configPath === undefined) return undefined;
+  const printed = relative(process.cwd(), configPath);
+  return printed === 'prisma.config.ts' ? undefined : printed;
 }
 
 async function runMigration(
@@ -275,6 +286,7 @@ async function runMigration(
   ref: PnTargetRef,
   refName: string | undefined,
   extensionPacks: readonly PnExtensionPack[],
+  configPath: string | undefined,
 ): Promise<OrmMigrationOutcome> {
   const client = createPostgresControlClient({ connection, extensions: extensionPacks });
   await client.connect();
@@ -305,7 +317,11 @@ async function runMigration(
     const result = await client.migrate({
       contract: contractJson,
       migrationsDir,
-      invocation: { cwd: process.cwd(), configPath: undefined, dbGiven: true },
+      invocation: {
+        cwd: process.cwd(),
+        configPath: printedConfigPath(configPath),
+        dbGiven: true,
+      },
       ...(refName !== undefined
         ? { refHash: ref.hash, refInvariants: ref.invariants, refName }
         : {}),

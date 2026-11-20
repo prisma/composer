@@ -128,6 +128,7 @@ export const ormMigrationProviderService: Provider.ProviderService<OrmMigration>
           migrationsDir: news.migrationsDir,
           ref: { hash: news.targetHash, invariants: news.invariants },
           extensionPacks,
+          configPath: news.configPath,
           ...(news.refName !== undefined ? { refName: news.refName } : {}),
         });
       },
