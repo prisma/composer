@@ -109,15 +109,15 @@ Consequences Prisma Composer designs around:
    preview-class with that Branch's overrides. Under variable groups (below), a Branch
    receives one group in place of a class.
 
-## Variable groups — the platform's planned model
+## Variable groups
 
-Prisma Cloud is moving variables into groups. This is designed in `projects/compute-env-var-groups/proposal.md` on the `pdp-control-plane` branch `chore/compute-env-var-groups-proposal`, and is not live yet. What Composer depends on:
+Prisma Cloud keeps variables in groups. What Composer depends on:
 
-- **Variable groups.** Every project has a `production` group and a `preview` group, holding the rows the two classes hold today. A project can add custom groups, each with one rule on a branch's git name: `equals` or `startsWith`.
+- **Variable groups.** Every project has a `production` group and a `preview` group, holding the rows the two old row classes held. A group's class (`production`, `preview` or `custom`) names its kind and is not a row's old class. A project can add custom groups, each with one rule on a branch's git name: `equals` or `startsWith`.
 - **One group per branch.** The production branch receives `production`. Any other branch receives the custom group with the most precise matching rule, or else `preview`. Groups do not combine.
-- **Service variables.** Values stored on one service, set only through the create-deployment request, deleted with the service.
+- **Service variables.** Values stored on one platform service, which is one Composer service in one environment. They are set only when a deployment is created, through the create-deployment request, which Console's "Save and Deploy" sends, and are deleted with the platform service.
 - **The order a deployment receives values:** every value of its branch's group, then the branch's overrides, then the service's variables. Later wins. The map is still frozen into the version when it is created.
-- **Branch overrides are being removed.** Three months after the platform work merges, a write that names a branch is rejected. Existing override rows keep applying until their branch is deleted.
+- **Branch overrides are being removed.** The platform is removing branch overrides: after a notice period, it rejects a write that names a branch. Existing overrides keep applying until their branch is deleted.
 - **The resolved-variables read.** `GET /v1/projects/{projectId}/resolved-variables?branchId=…` returns the group the branch receives (`id`, `name`, `class`) and every key the branch receives, each with `updatedAt`, `isManagedBySystem` and a `source` (`group`, `branchOverride` or `service`). It returns no values and does not paginate. Deploy preflight reads it once per deploy ([ADR-0064](../90-decisions/ADR-0064-an-app-declares-its-platform-variables-in-its-root-and-the-deploy-copies-no-local-values.md)).
 
 ## Related
