@@ -65,6 +65,15 @@ describe('sourceMapProblems', () => {
     assert.match(problems[1], /b\.mjs: has no source map/);
   });
 
+  it('fails a type declaration file with declarations but no map, and passes one that only re-exports', () => {
+    const problems = problemsFor({
+      'index.d.mts': 'declare function f(): number;\nexport { f };\n',
+      'worker.d.mts': 'import "./chunk.mjs";\nexport { };\n',
+    });
+    assert.equal(problems.length, 1);
+    assert.match(problems[0], /index\.d\.mts: has no source map/);
+  });
+
   it('fails an own-code source inside a dist folder, including one under node_modules/@internal', () => {
     const problems = problemsFor({
       'index.mjs': code,
