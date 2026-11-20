@@ -34,13 +34,16 @@ const graph = () =>
     }),
   );
 
-/** A platform holding STRIPE_SECRET_KEY, last written at `updatedAt`, or no row when `updatedAt` is undefined. Its VALUE is never returned — the API returns none. */
+/** A platform whose production group holds STRIPE_SECRET_KEY, last written at `updatedAt`, or does not hold it when `updatedAt` is undefined. The read returns no value. */
 const fakePlatform = (updatedAt: string | undefined): ManagementApiClient =>
   ({
     GET: async () => ({
       data: {
-        data: updatedAt === undefined ? [] : [{ branchId: null, updatedAt }],
-        pagination: { nextCursor: null, hasMore: false },
+        group: { id: 'grp-production', name: 'production', class: 'production' },
+        data:
+          updatedAt === undefined
+            ? []
+            : [{ key: 'STRIPE_SECRET_KEY', updatedAt, isManagedBySystem: false }],
       },
       error: undefined,
       response: new Response(null, { status: 200 }),
@@ -63,6 +66,7 @@ const preflightAgainst = (updatedAt: string | undefined) =>
         { appName: 'app', environment: 'production' },
         'proj',
         undefined,
+        'br-default',
       ),
       environment: 'production',
     },

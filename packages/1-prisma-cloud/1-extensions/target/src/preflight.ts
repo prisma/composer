@@ -14,12 +14,12 @@ import {
   ManagementClient,
   managementClientLayer,
 } from '@internal/lowering';
+import { type } from 'arktype';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import { prismaCloudContainerOf } from './container.ts';
+import { type PrismaCloudContainer, prismaCloudContainerOf } from './container.ts';
 import type { DeployPreflightPayload } from './control/preflight-payload.ts';
 import { type EnvKeyClash, findEnvKeyClashes } from './env-key-clash.ts';
-import { mapWithConcurrency } from './map-with-concurrency.ts';
 import { addReader, missingVariableNames, missingVariablesText } from './missing-variables-text.ts';
 import { resolveOrmConfig } from './orm-config.ts';
 import { isPostgresResourceNode, requiredPackHeadOf } from './orm-postgres.ts';
@@ -35,11 +35,7 @@ const classFor = (branchId: string | undefined): EnvClass =>
 
 /** The fields of one env-var list page that preflight consumes (metadata only; values are write-only). */
 interface EnvVarListPage {
-  readonly data: readonly {
-    readonly branchId: string | null;
-    readonly updatedAt: string;
-    readonly isManagedBySystem?: boolean;
-  }[];
+  readonly data: readonly { readonly branchId: string | null }[];
   readonly pagination: { readonly nextCursor: string | null; readonly hasMore: boolean };
 }
 interface EnvVarListResult {
@@ -71,48 +67,61 @@ async function listEnvVars(
   >(res);
 }
 
-interface ResolvedRow {
-  readonly updatedAt?: string;
-  readonly managedBySystem: boolean;
+const RESOLVED_VARIABLES_PATH = '/v1/projects/{projectId}/resolved-variables';
+
+/** The fields of the resolved-variables read that preflight uses: names and times, never values. */
+const resolvedVariablesBody = type({
+  group: { name: 'string', class: 'string' },
+  data: type({ key: 'string', updatedAt: 'string', isManagedBySystem: 'boolean' }).array(),
+});
+type ResolvedVariables = typeof resolvedVariablesBody.infer;
+type VariableGroup = ResolvedVariables['group'];
+
+interface ResolvedVariablesClient {
+  GET(
+    path: typeof RESOLVED_VARIABLES_PATH,
+    init: { params: { path: { projectId: string }; query: { branchId: string } } },
+  ): Promise<{ readonly data?: unknown; readonly error?: unknown; readonly response: Response }>;
 }
 
-const LIST_CONCURRENCY = 8;
+const PAGINATION_FIELDS = ['pagination', 'nextCursor', 'hasMore', 'cursor'];
 
-async function readPlatformVariable(
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+async function readResolvedVariables(
   client: ManagementApiClient,
   projectId: string,
-  branchId: string | undefined,
-  key: string,
-): Promise<ResolvedRow | undefined> {
-  const cls = classFor(branchId);
-  let classRow: string | undefined;
-  let branchRow: string | undefined;
-  let managedBySystem = false;
-  await drivePagesAsync(
-    `environment variables named "${key}"`,
-    async (cursor) => {
-      const res = await listEnvVars(
-        client,
-        cursor === undefined
-          ? { projectId, class: cls, key }
-          : { projectId, class: cls, key, cursor },
-      );
-      if (res.error !== undefined) throw listFailedError(key, res.error);
-      return res.data ?? { data: [], pagination: { nextCursor: null, hasMore: false } };
-    },
-    (data) => {
-      for (const row of data) {
-        if (row.branchId === null) classRow = row.updatedAt;
-        else if (branchId !== undefined && row.branchId === branchId) branchRow = row.updatedAt;
-        else continue;
-        managedBySystem ||= row.isManagedBySystem === true;
-      }
-      return false;
-    },
-  );
-  const updatedAt = branchRow ?? classRow;
-  if (updatedAt === undefined) return undefined;
-  return { updatedAt, managedBySystem };
+  branchId: string,
+): Promise<ResolvedVariables> {
+  const call = `GET /v1/projects/${projectId}/resolved-variables?branchId=${branchId}`;
+  const res = await blindCast<
+    ResolvedVariablesClient,
+    'the published Management API SDK does not describe the resolved-variables read yet; its body is checked below'
+  >(client).GET(RESOLVED_VARIABLES_PATH, {
+    params: { path: { projectId }, query: { branchId } },
+  });
+  if (res.error !== undefined || !res.response.ok) {
+    throw resolvedReadFailedError(call, res.response.status, res.error);
+  }
+  const body = res.data;
+  if (isRecord(body) && PAGINATION_FIELDS.some((field) => field in body)) {
+    throw pagedReadError(call);
+  }
+  const parsed = resolvedVariablesBody(body);
+  if (parsed instanceof type.errors) throw unexpectedReadError(call, parsed.summary);
+  return parsed;
+}
+
+/** The branch whose variables the environment receives: its own, or the project's default branch for production. */
+function deployBranchIdOf(container: PrismaCloudContainer): string {
+  const branchId = container.branchId ?? container.defaultBranchId;
+  if (branchId === undefined) {
+    throw new Error(
+      `deploy preflight: the container for the environment "${container.input.environment}" has no branch id. This is a bug in Composer.`,
+    );
+  }
+  return branchId;
 }
 
 /** Whether `key` has a row in the scope Composer writes its own rows to: production, or the environment's branch. */
@@ -194,19 +203,38 @@ const listFailedError = (key: string, error: unknown): Error =>
     `deploy preflight: Prisma Management API error listing "${key}": ${JSON.stringify(error)}.`,
   );
 
+const MAY_NOT_OFFER_READ =
+  'The platform may not offer this read yet, and this Composer version needs it to check platform variables.';
+
+const resolvedReadFailedError = (call: string, status: number, error: unknown): Error =>
+  new Error(
+    `Deploy failed. ${call} answered HTTP ${String(status)}` +
+      `${error === undefined ? '' : `: ${JSON.stringify(error)}`}. ${MAY_NOT_OFFER_READ}`,
+  );
+
+const unexpectedReadError = (call: string, problem: string): Error =>
+  new Error(
+    `Deploy failed. ${call} answered with a body this Composer version cannot read: ${problem}. ${MAY_NOT_OFFER_READ}`,
+  );
+
+const pagedReadError = (call: string): Error =>
+  new Error(
+    `Deploy failed. ${call} answered with one page of a longer list. This Composer version reads only one page, so it would report set variables as missing. It is too old for the platform: upgrade Composer and deploy again.`,
+  );
+
 /** `value` as one POSIX shell word: single-quoted, each embedded `'` written as `'\''`. */
 const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
-function setCommands(
-  name: string,
-  projectId: string,
-  branchId: string | undefined,
-  environment: string,
-): readonly string[] {
+function setCommands(name: string, projectId: string, group: VariableGroup): readonly string[] {
   const add = `prisma project env add ${shellQuote(`${name}=<value>`)} --project ${shellQuote(projectId)}`;
-  return branchId === undefined
-    ? [`${add} --role production`]
-    : [`${add} --role preview`, `${add} --branch ${shellQuote(environment)}`];
+  switch (group.class) {
+    case 'production':
+      return [`${add} --role production`];
+    case 'preview':
+      return [`${add} --role preview`];
+    default:
+      return [`Set ${name} in the variable group ${shellQuote(group.name)} in the Prisma Console.`];
+  }
 }
 
 function requiredError(
@@ -283,7 +311,8 @@ export async function runPreflight(
   deps?: { readonly client?: ManagementApiClient },
 ): Promise<DeployPreflightPayload> {
   checkPublicUrls(input.graph);
-  const { projectId, branchId } = prismaCloudContainerOf(input.container);
+  const container = prismaCloudContainerOf(input.container);
+  const { projectId, branchId } = container;
 
   const services = inputManifest(input.graph).map(({ serviceAddress, binding }) => ({
     serviceAddress,
@@ -307,21 +336,25 @@ export async function runPreflight(
   const pending = await pendingEnvKeyClashes(client, projectId, branchId, clashes);
   if (pending.length > 0) throw envKeyClashError(pending, projectId, branchId, input.environment);
 
-  const rows = await mapWithConcurrency(names, LIST_CONCURRENCY, (name) =>
-    readPlatformVariable(client, projectId, branchId, name),
-  );
+  if (names.length === 0) {
+    input.report?.({ checked: 0, unset: [] });
+    return { updatedAt: new Map() };
+  }
+
+  const resolved = await readResolvedVariables(client, projectId, deployBranchIdOf(container));
+  const entries = new Map(resolved.data.map((entry) => [entry.key, entry]));
   const updatedAt = new Map<string, string>();
   const unset = new Set<string>();
   const managedBySystem: string[] = [];
-  names.forEach((name, index) => {
-    const row = rows[index];
-    if (row?.updatedAt === undefined) {
+  for (const name of names) {
+    const entry = entries.get(name);
+    if (entry === undefined) {
       unset.add(name);
-      return;
+      continue;
     }
-    updatedAt.set(name, row.updatedAt);
-    if (row.managedBySystem) managedBySystem.push(name);
-  });
+    updatedAt.set(name, entry.updatedAt);
+    if (entry.isManagedBySystem) managedBySystem.push(name);
+  }
   if (managedBySystem.length > 0) throw managedBySystemError(managedBySystem);
   if (unset.size === 0) {
     input.report?.({ checked: names.length, unset: [] });
@@ -350,7 +383,7 @@ export async function runPreflight(
     if (unset.has(use.name)) addReader(readers, use.name, use.reader);
   }
 
-  const commandsFor = (name: string) => setCommands(name, projectId, branchId, input.environment);
+  const commandsFor = (name: string) => setCommands(name, projectId, resolved.group);
   if (required.length > 0) throw requiredError(required, readers, commandsFor);
   const findings: UnsetPlatformVariable[] = [...unset].sort().map((name) => ({
     name,
