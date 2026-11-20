@@ -1,19 +1,30 @@
 #!/usr/bin/env bun
 /**
- * Fails when a published package depends at run time on a package this workspace patches with `pnpm patch`.
+ * Fails when a package this workspace patches with `pnpm patch` is in the run-time install of a published package, by any path.
  * A patch applies only to this workspace's install; a user's install gets the unpatched package.
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 
 const usage = 'Usage: bun scripts/check-patched-dependencies.ts, run from the repository root';
 
-export interface Manifest {
-  readonly name: string;
-  readonly dependencies?: Readonly<Record<string, string>>;
-  readonly devDependencies?: Readonly<Record<string, string>>;
-  readonly peerDependencies?: Readonly<Record<string, string>>;
-  readonly optionalDependencies?: Readonly<Record<string, string>>;
+type Resolved = Readonly<Record<string, { readonly version: string }>>;
+
+/** The parts of `pnpm-lock.yaml` the check reads. */
+export interface Lockfile {
+  readonly patchedDependencies?: Readonly<Record<string, unknown>>;
+  readonly importers: Readonly<
+    Record<string, { readonly dependencies?: Resolved; readonly optionalDependencies?: Resolved }>
+  >;
+  readonly snapshots?: Readonly<
+    Record<
+      string,
+      {
+        readonly dependencies?: Readonly<Record<string, string>>;
+        readonly optionalDependencies?: Readonly<Record<string, string>>;
+      } | null
+    >
+  >;
 }
 
 export interface PatchedRuntimeDependency {
@@ -28,42 +39,69 @@ export function packageNameOf(patchKey: string): string {
   return at > 0 ? patchKey.slice(0, at) : patchKey;
 }
 
-const runtimeDependencies = (manifest: Manifest): string[] =>
-  Object.keys({
-    ...manifest.dependencies,
-    ...manifest.peerDependencies,
-    ...manifest.optionalDependencies,
-  });
+/** Every package name a patch is declared for: in the root manifest, in the workspace file, or recorded in the lockfile. */
+export function patchedNames(declared: {
+  readonly rootManifest?: { readonly pnpm?: { readonly patchedDependencies?: object } };
+  readonly workspaceFile?: { readonly patchedDependencies?: object } | null;
+  readonly lockfile: Lockfile;
+}): Set<string> {
+  return new Set(
+    [
+      ...Object.keys(declared.rootManifest?.pnpm?.patchedDependencies ?? {}),
+      ...Object.keys(declared.workspaceFile?.patchedDependencies ?? {}),
+      ...Object.keys(declared.lockfile.patchedDependencies ?? {}),
+    ].map(packageNameOf),
+  );
+}
 
 /**
- * The workspace packages a user's install of `manifest` also installs. A workspace package a published package
- * bundles from its devDependencies is not followed: its external dependencies must be the published package's own.
+ * Walks each published importer's `dependencies` and `optionalDependencies` through the lockfile: the workspace
+ * packages it installs (`link:`) and every third-party package below them. A workspace package that is only a
+ * devDependency is bundled, and its imports are inlined unless the published package lists them, so only listed
+ * dependencies reach a user's install.
  */
-const workspaceDependencies = (manifest: Manifest, workspace: ReadonlyMap<string, Manifest>) =>
-  runtimeDependencies(manifest).filter((name) => workspace.has(name));
-
 export function patchedRuntimeDependencies(
-  patchKeys: readonly string[],
-  published: readonly string[],
-  workspace: ReadonlyMap<string, Manifest>,
+  patched: ReadonlySet<string>,
+  published: ReadonlyMap<string, string>,
+  lockfile: Lockfile,
 ): PatchedRuntimeDependency[] {
-  const patched = new Set(patchKeys.map(packageNameOf));
   const found: PatchedRuntimeDependency[] = [];
-  for (const publishedPackage of published) {
+  for (const [importerPath, publishedPackage] of published) {
     const seen = new Set<string>();
-    const walk = (name: string, via: readonly string[]): void => {
-      if (seen.has(name)) return;
-      seen.add(name);
-      const manifest = workspace.get(name);
-      if (manifest === undefined) return;
-      for (const dependency of runtimeDependencies(manifest)) {
-        if (patched.has(dependency)) found.push({ patched: dependency, publishedPackage, via });
-      }
-      for (const dependency of workspaceDependencies(manifest, workspace)) {
-        walk(dependency, [...via, dependency]);
+    const reported = new Set<string>();
+    const walkImporter = (importer: string, via: readonly string[]): void => {
+      if (seen.has(`importer:${importer}`)) return;
+      seen.add(`importer:${importer}`);
+      const entry = lockfile.importers[importer];
+      for (const [dependency, { version }] of Object.entries({
+        ...entry?.dependencies,
+        ...entry?.optionalDependencies,
+      })) {
+        visit(dependency, version, importer, via);
       }
     };
-    walk(publishedPackage, []);
+    const visit = (name: string, version: string, from: string, via: readonly string[]): void => {
+      if (patched.has(name) && !reported.has(name)) {
+        reported.add(name);
+        found.push({ patched: name, publishedPackage, via });
+      }
+      if (version.startsWith('link:')) {
+        const linked = path.posix.normalize(path.posix.join(from, version.slice('link:'.length)));
+        walkImporter(linked, [...via, name]);
+        return;
+      }
+      const key = `${name}@${version}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const snapshot = lockfile.snapshots?.[key];
+      for (const [dependency, dependencyVersion] of Object.entries({
+        ...snapshot?.dependencies,
+        ...snapshot?.optionalDependencies,
+      })) {
+        visit(dependency, dependencyVersion, from, [...via, name]);
+      }
+    };
+    walkImporter(importerPath, []);
   }
   return found;
 }
@@ -82,42 +120,43 @@ export function failureMessage(found: readonly PatchedRuntimeDependency[]): stri
   );
 }
 
-function manifestsUnder(dir: string, into: Map<string, { manifest: Manifest; dir: string }>): void {
-  for (const entry of readdirSync(dir)) {
-    if (entry === 'node_modules' || entry === 'dist' || entry.startsWith('.')) continue;
-    const full = path.join(dir, entry);
-    if (statSync(full).isDirectory()) {
-      manifestsUnder(full, into);
-    } else if (entry === 'package.json') {
-      const manifest: Manifest = JSON.parse(readFileSync(full, 'utf8'));
-      if (typeof manifest.name === 'string') into.set(manifest.name, { manifest, dir });
-    }
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const isLockfile = (value: unknown): value is Lockfile =>
+  isRecord(value) && isRecord(value['importers']);
+
+function readText(file: string): string {
+  try {
+    return readFileSync(file, 'utf8');
+  } catch {
+    console.error(`Cannot read ${file}. ${usage}`);
+    process.exit(1);
   }
 }
 
 if (import.meta.main) {
   const root = process.cwd();
-  let rootManifest: { pnpm?: { patchedDependencies?: Record<string, string> } };
-  try {
-    rootManifest = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
-  } catch {
-    console.error(`No package.json in ${root}. ${usage}`);
+  const lockfile = Bun.YAML.parse(readText(path.join(root, 'pnpm-lock.yaml')));
+  if (!isLockfile(lockfile)) {
+    console.error(`pnpm-lock.yaml has no importers. ${usage}`);
     process.exit(1);
   }
-  const packages = new Map<string, { manifest: Manifest; dir: string }>();
-  manifestsUnder(path.join(root, 'packages'), packages);
-  const published = [...packages.values()]
-    .filter(({ dir }) => path.relative(root, dir).startsWith(path.join('packages', '9-public')))
-    .map(({ manifest }) => manifest.name);
-  const workspace = new Map([...packages].map(([name, { manifest }]) => [name, manifest]));
-  const found = patchedRuntimeDependencies(
-    Object.keys(rootManifest.pnpm?.patchedDependencies ?? {}),
-    published,
-    workspace,
-  );
+  const workspaceFile = Bun.YAML.parse(readText(path.join(root, 'pnpm-workspace.yaml')));
+  const patched = patchedNames({
+    rootManifest: JSON.parse(readText(path.join(root, 'package.json'))),
+    workspaceFile: isRecord(workspaceFile) ? workspaceFile : null,
+    lockfile,
+  });
+  const published = new Map<string, string>();
+  for (const importer of Object.keys(lockfile.importers)) {
+    if (!importer.startsWith('packages/9-public/')) continue;
+    published.set(importer, JSON.parse(readText(path.join(root, importer, 'package.json'))).name);
+  }
+  const found = patchedRuntimeDependencies(patched, published, lockfile);
   if (found.length > 0) {
     console.error(failureMessage(found));
     process.exit(1);
   }
-  console.log(`No published package depends on a patched package (${published.length} checked).`);
+  console.log(`No published package depends on a patched package (${published.size} checked).`);
 }

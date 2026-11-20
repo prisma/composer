@@ -3,42 +3,50 @@ import { describe, it } from 'node:test';
 
 import {
   failureMessage,
-  type Manifest,
+  type Lockfile,
   packageNameOf,
+  patchedNames,
   patchedRuntimeDependencies,
 } from './check-patched-dependencies.ts';
 
-const workspace = new Map<string, Manifest>([
-  [
-    '@prisma/composer-prisma-cloud',
-    {
-      name: '@prisma/composer-prisma-cloud',
+const lockfile: Lockfile = {
+  patchedDependencies: { '@alchemy.run/prisma@2.0.0': { path: 'patches/a.patch' } },
+  importers: {
+    'packages/9-public/cloud': {
       dependencies: {
-        '@alchemy.run/prisma': 'catalog:',
-        '@prisma/composer': 'workspace:0.39.0',
-        effect: 'catalog:',
+        '@alchemy.run/prisma': { version: '2.0.0(patch_hash=abc)' },
+        '@prisma/composer': { version: 'link:../composer' },
+        'third-party': { version: '1.0.0' },
       },
     },
-  ],
-  [
-    '@prisma/composer',
-    {
-      name: '@prisma/composer',
-      dependencies: { '@prisma/engine': 'catalog:' },
-      devDependencies: { '@internal/lowering': 'workspace:0.39.0', vitest: '^4' },
+    'packages/9-public/composer': {
+      dependencies: { effect: { version: '4.1.4' } },
     },
-  ],
-  ['@internal/lowering', { name: '@internal/lowering', dependencies: { 'only-for-tests': '^1' } }],
+    'packages/1-prisma-cloud/lowering': {
+      dependencies: { 'bundled-only': { version: '1.0.0' } },
+    },
+  },
+  snapshots: {
+    '@alchemy.run/prisma@2.0.0(patch_hash=abc)': {
+      dependencies: { '@distilled.cloud/prisma': '1.0.0(patch_hash=def)' },
+    },
+    '@distilled.cloud/prisma@1.0.0(patch_hash=def)': {},
+    'third-party@1.0.0': { dependencies: { 'deep-patched': '3.0.0' } },
+    'deep-patched@3.0.0': {},
+    'effect@4.1.4': {},
+    'bundled-only@1.0.0': {},
+  },
+};
+
+const published = new Map([
+  ['packages/9-public/cloud', '@prisma/composer-prisma-cloud'],
+  ['packages/9-public/composer', '@prisma/composer'],
 ]);
 
 describe('patchedRuntimeDependencies', () => {
-  it('names a patched package a published package depends on', () => {
+  it('names a patched package a published package lists', () => {
     assert.deepEqual(
-      patchedRuntimeDependencies(
-        ['@alchemy.run/prisma@2.0.0-beta.87'],
-        ['@prisma/composer-prisma-cloud'],
-        workspace,
-      ),
+      patchedRuntimeDependencies(new Set(['@alchemy.run/prisma']), published, lockfile),
       [
         {
           patched: '@alchemy.run/prisma',
@@ -49,42 +57,69 @@ describe('patchedRuntimeDependencies', () => {
     );
   });
 
-  it('follows the workspace packages a published package installs', () => {
+  it('finds a patched package that only a third-party dependency pulls in', () => {
+    assert.deepEqual(patchedRuntimeDependencies(new Set(['deep-patched']), published, lockfile), [
+      {
+        patched: 'deep-patched',
+        publishedPackage: '@prisma/composer-prisma-cloud',
+        via: ['third-party'],
+      },
+    ]);
     assert.deepEqual(
-      patchedRuntimeDependencies(
-        ['@prisma/engine@1.0.0'],
-        ['@prisma/composer-prisma-cloud'],
-        workspace,
-      ),
+      patchedRuntimeDependencies(new Set(['@distilled.cloud/prisma']), published, lockfile),
       [
         {
-          patched: '@prisma/engine',
+          patched: '@distilled.cloud/prisma',
           publishedPackage: '@prisma/composer-prisma-cloud',
-          via: ['@prisma/composer'],
+          via: ['@alchemy.run/prisma'],
         },
       ],
     );
   });
 
-  it('ignores a patched package that only a devDependency or a test needs', () => {
+  it('follows the workspace packages a published package installs', () => {
+    assert.deepEqual(patchedRuntimeDependencies(new Set(['effect']), published, lockfile), [
+      {
+        patched: 'effect',
+        publishedPackage: '@prisma/composer-prisma-cloud',
+        via: ['@prisma/composer'],
+      },
+      { patched: 'effect', publishedPackage: '@prisma/composer', via: [] },
+    ]);
+  });
+
+  it('ignores a patched package reached only through a bundled workspace package', () => {
     assert.deepEqual(
-      patchedRuntimeDependencies(
-        ['only-for-tests@1.0.0', 'vitest@4.0.0'],
-        ['@prisma/composer-prisma-cloud', '@prisma/composer'],
-        workspace,
-      ),
+      patchedRuntimeDependencies(new Set(['bundled-only']), published, lockfile),
       [],
     );
   });
 
   it('passes when nothing is patched', () => {
+    assert.deepEqual(patchedRuntimeDependencies(new Set(), published, lockfile), []);
+  });
+});
+
+describe('patchedNames', () => {
+  it('takes a patch declared only in pnpm-workspace.yaml', () => {
     assert.deepEqual(
-      patchedRuntimeDependencies(
-        [],
-        ['@prisma/composer-prisma-cloud', '@prisma/composer'],
-        workspace,
-      ),
-      [],
+      patchedNames({
+        rootManifest: {},
+        workspaceFile: { patchedDependencies: { 'only-in-workspace@1.0.0': 'patches/w.patch' } },
+        lockfile: { importers: {} },
+      }),
+      new Set(['only-in-workspace']),
+    );
+  });
+
+  it('takes patches from the root manifest and the lockfile', () => {
+    assert.deepEqual(
+      patchedNames({
+        rootManifest: { pnpm: { patchedDependencies: { 'in-manifest@1.0.0': 'p' } } },
+        workspaceFile: null,
+        lockfile,
+      }),
+      new Set(['in-manifest', '@alchemy.run/prisma']),
     );
   });
 });
@@ -102,12 +137,12 @@ describe('failureMessage', () => {
       {
         patched: '@distilled.cloud/prisma',
         publishedPackage: '@prisma/composer-prisma-cloud',
-        via: ['@prisma/composer'],
+        via: ['@alchemy.run/prisma'],
       },
     ]);
     assert.match(
       message,
-      /@prisma\/composer-prisma-cloud depends on @distilled\.cloud\/prisma \(through @prisma\/composer\)/,
+      /@prisma\/composer-prisma-cloud depends on @distilled\.cloud\/prisma \(through @alchemy\.run\/prisma\)/,
     );
     assert.match(message, /gets the unpatched dependency/);
   });
