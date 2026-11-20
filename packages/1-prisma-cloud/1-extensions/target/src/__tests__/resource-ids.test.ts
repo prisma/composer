@@ -2,14 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { RenamePolicy } from 'alchemy/Rename';
 import * as Effect from 'effect/Effect';
 import * as Option from 'effect/Option';
-import { configKey } from '../config-key.ts';
 import {
   addressBelowApp,
   fromLegacyId,
-  legacyConfigKey,
-  legacyEnvVarId,
   legacyGeneratedParamId,
-  legacyGeneratedParamVarName,
   legacyInputKey,
   legacyNodeResourceId,
   legacyServiceKeyId,
@@ -73,34 +69,8 @@ describe('legacy resource IDs', () => {
     );
   });
 
-  test('legacyEnvVarId is the key and `-var`', () => {
-    expect(legacyEnvVarId('COMPOSER_WEB_PORT')).toBe('COMPOSER_WEB_PORT-var');
-  });
-
-  test('legacyConfigKey builds the key from the address below the app, for both owners', () => {
-    expect(legacyConfigKey('shop', 'shop.web', { owner: 'service', name: 'port' })).toBe(
-      'COMPOSER_WEB_PORT',
-    );
-    expect(
-      legacyConfigKey('my-shop', 'my-shop.auth.api', { owner: { input: 'db' }, name: 'url' }),
-    ).toBe('COMPOSER_AUTH_API_DB_URL');
-  });
-
-  test("a module named like the app makes a node's new key equal another node's old key", () => {
-    const port = { owner: 'service', name: 'port' } as const;
-    // The upgrade deploy of such an app fails with a conflict on this key and deletes nothing (ADR-0057).
-    expect(configKey('shop.x', port)).toBe(legacyConfigKey('shop', 'shop.shop.x', port));
-    expect(configKey('shop.x', port)).toBe('COMPOSER_SHOP_X_PORT');
-  });
-
   test('legacyInputKey is the input row key below the app', () => {
     expect(legacyInputKey('shop', 'shop.auth.api')).toBe('COMPOSER_AUTH_API_INPUT');
-  });
-
-  test('legacyGeneratedParamVarName is the generated leaf variable below the app', () => {
-    expect(legacyGeneratedParamVarName('shop', 'shop.web', 'stripe.key')).toBe(
-      'COMPOSER_WEB_STRIPE_KEY_GENERATED',
-    );
   });
 
   test('legacyGeneratedParamId is the legacy input key, the path and `-generated`', () => {
