@@ -44,7 +44,7 @@ function invalidAlchemyStageError(branchId: string): Error {
 }
 
 export class PrismaCloudContainer implements ContainerInstance {
-  /** The deterministic Alchemy stage (ContainerInstance SPI): the environment's Branch id, or the default Branch's id for `production`. Absent only for the dev container, which resolves no Branch. */
+  /** The Alchemy stage (ContainerInstance SPI): {@link deployBranchId}. */
   readonly alchemyStage: string | undefined;
   /** The Branch this deploy targets: the environment's Branch, or the project's default Branch for `production`. Absent only for the dev container. */
   readonly deployBranchId: string | undefined;

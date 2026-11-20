@@ -27,7 +27,6 @@ const copyOf = <T>(value: T): T => {
   return out.value as T;
 };
 
-/** A resolved container: a named environment carries its branch id, production its project's default branch id. */
 const fakeContainer = (projectId: string, branchId: string | undefined) =>
   new PrismaCloudContainer(
     { appName: 'app', environment: branchId === undefined ? 'production' : 'pr-1' },
@@ -57,7 +56,6 @@ type Source =
   | { type: 'branchOverride' }
   | { type: 'service'; serviceId: string };
 
-/** One key the resolved-variables read lists for the branch. */
 interface Entry {
   key: string;
   updatedAt?: string;
@@ -77,18 +75,13 @@ const DEFAULT_UPDATED_AT = '2026-01-01T00:00:00.000Z';
 const RESOLVED_VARIABLES_PATH = '/v1/projects/{projectId}/resolved-variables';
 
 interface FakeState {
-  /** Queries of the environment-variable list. */
   gets: Record<string, string>[];
-  /** Each resolved-variables read, by the project and branch it asked about. */
   reads: { projectId: string; branchId: string }[];
   posts: Record<string, unknown>[];
   rows: Row[];
   entries: Entry[];
-  /** The group the branch receives; unset gives `production` for the default branch and `preview` otherwise. */
   group?: Group;
-  /** Replaces the read's answer: an error status, or a body of the test's own. */
   answer?: { status: number; body?: unknown; error?: unknown };
-  /** Makes the read throw, as the client does on a network failure or a body that is not JSON. */
   throws?: Error;
 }
 
@@ -98,6 +91,9 @@ const builtInGroup = (branchId: string): Group =>
   branchId === DEFAULT_BRANCH_ID
     ? { id: 'grp-production', name: 'production', class: 'production' }
     : { id: 'grp-preview', name: 'preview', class: 'preview' };
+
+const asText = (body: unknown): unknown =>
+  typeof body === 'string' || body === undefined ? body : JSON.stringify(body);
 
 /** A stubbed Management API client — test file, exempt from the no-bare-cast rule. */
 const fakeClient = (state: FakeState): ManagementApiClient =>
@@ -116,14 +112,14 @@ const fakeClient = (state: FakeState): ManagementApiClient =>
         if (state.answer !== undefined) {
           const ok = state.answer.status < 400;
           return {
-            data: ok ? state.answer.body : undefined,
+            data: ok ? asText(state.answer.body) : undefined,
             error: ok ? undefined : state.answer.error,
             response: new Response(null, { status: state.answer.status }),
           };
         }
         const group = state.group ?? builtInGroup(branchId);
         return {
-          data: {
+          data: asText({
             group,
             data: state.entries.map((entry) => ({
               key: entry.key,
@@ -136,7 +132,7 @@ const fakeClient = (state: FakeState): ManagementApiClient =>
                 groupClass: group.class,
               },
             })),
-          },
+          }),
           error: undefined,
           response: new Response(null, { status: 200 }),
         };
@@ -501,11 +497,36 @@ describe('the deploy check reads which variables the branch receives and sets no
       expect((error as Error).cause).toBe(cause);
     });
 
-    test('a body that is not JSON names the call', async () => {
-      state.throws = new SyntaxError('Unexpected token \'<\', "<html>" is not valid JSON');
+    test('a 200 whose body is not JSON names the status and a short excerpt', async () => {
+      state.answer = { status: 200, body: '<html>\n  <body>Maintenance</body>\n</html>' };
 
       expect(await failedReadMessage()).toBe(
-        `${COULD_NOT_READ} failed: Unexpected token '<', "<html>" is not valid JSON.`,
+        `${COULD_NOT_READ} answered HTTP 200 with a body that is not JSON: <html> <body>Maintenance</body> </html>.`,
+      );
+    });
+
+    test('an error status whose body is a whole HTML page shows one short line of it', async () => {
+      const page = `<html>\n<head><title>502 Bad Gateway</title></head>\n<body>${'x'.repeat(5000)}</body>\n</html>`;
+      state.answer = { status: 502, error: page };
+
+      const message = await failedReadMessage();
+
+      expect(message).toStartWith(
+        `${COULD_NOT_READ} answered HTTP 502: <html> <head><title>502 Bad Gateway</title></head> <body>xxx`,
+      );
+      expect(message).toEndWith('….');
+      expect(message).not.toContain('\n');
+      expect(message.length).toBeLessThan(COULD_NOT_READ.length + 160);
+    });
+
+    test('a thrown error that carries a status names it, and the sentence ends with one full stop', async () => {
+      state.throws = Object.assign(
+        new Error('The management API rejected the service token from PRISMA_SERVICE_TOKEN.'),
+        { status: 401 },
+      );
+
+      expect(await failedReadMessage()).toBe(
+        `${COULD_NOT_READ} failed with HTTP 401: The management API rejected the service token from PRISMA_SERVICE_TOKEN.`,
       );
     });
 

@@ -13,8 +13,7 @@ export function prismaCloudReporter(): ReporterDescriptor {
   return Builds.buildReporter({
     refsOf: (container) => {
       const { projectId, branchId, deployBranchId } = prismaCloudContainerOf(container);
-      // The Build references only a non-production environment's Branch; the topology lives
-      // on whichever Branch the deploy targets — the default one included.
+      // The Build references only a non-production environment's Branch.
       return { projectId, branchId, deployBranchId };
     },
   });

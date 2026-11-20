@@ -79,7 +79,10 @@ type VariableGroup = ResolvedVariables['group'];
 interface ResolvedVariablesClient {
   GET(
     path: typeof RESOLVED_VARIABLES_PATH,
-    init: { params: { path: { projectId: string }; query: { branchId: string } } },
+    init: {
+      params: { path: { projectId: string }; query: { branchId: string } };
+      parseAs: 'text';
+    },
   ): Promise<{ readonly data?: unknown; readonly error?: unknown; readonly response: Response }>;
 }
 
@@ -94,6 +97,30 @@ const saysThereIsMore = (fields: Record<string, unknown>): boolean =>
 const isPartial = (body: unknown): boolean =>
   isRecord(body) &&
   (saysThereIsMore(body) || (isRecord(body['pagination']) && saysThereIsMore(body['pagination'])));
+
+const NOT_JSON = Symbol('not JSON');
+
+function parseJson(text: unknown): unknown {
+  if (typeof text !== 'string') return NOT_JSON;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return NOT_JSON;
+  }
+}
+
+const EXCERPT_LENGTH = 120;
+
+const excerpt = (body: unknown): string => {
+  const text = typeof body === 'string' ? body : (JSON.stringify(body) ?? '');
+  const line = text.replace(/\s+/g, ' ').trim();
+  return line.length <= EXCERPT_LENGTH ? line : `${line.slice(0, EXCERPT_LENGTH)}…`;
+};
+
+const withoutClosingStops = (message: string): string => message.trim().replace(/\.+$/, '');
+
+const statusOf = (error: unknown): number | undefined =>
+  isRecord(error) && typeof error['status'] === 'number' ? error['status'] : undefined;
 
 interface ResolvedRead {
   readonly call: string;
@@ -115,15 +142,20 @@ async function readResolvedVariables(
     ResolvedVariablesClient,
     'the published Management API SDK does not describe the resolved-variables read yet; its body is checked below'
   >(client)
-    .GET(RESOLVED_VARIABLES_PATH, { params: { path: { projectId }, query: { branchId } } })
+    .GET(RESOLVED_VARIABLES_PATH, {
+      params: { path: { projectId }, query: { branchId } },
+      parseAs: 'text',
+    })
     .catch((cause: unknown) => {
       throw readThrewError(read, cause);
     });
   if (res.error !== undefined || !res.response.ok) {
     throw readStatusError(read, res.response.status, res.error);
   }
-  if (isPartial(res.data)) throw pagedReadError(read);
-  const parsed = resolvedVariablesBody(res.data);
+  const body = parseJson(res.data);
+  if (body === NOT_JSON) throw notJsonError(read, res.response.status, res.data);
+  if (isPartial(body)) throw pagedReadError(read);
+  const parsed = resolvedVariablesBody(body);
   if (parsed instanceof type.errors) throw unexpectedReadError(read, parsed.summary);
   return parsed;
 }
@@ -222,17 +254,27 @@ const couldNotRead = (read: ResolvedRead): string =>
 const readStatusError = (read: ResolvedRead, status: number, error: unknown): Error =>
   new Error(
     `${couldNotRead(read)} answered HTTP ${String(status)}` +
-      `${error === undefined || error === '' ? '' : `: ${JSON.stringify(error)}`}.` +
+      `${error === undefined || error === '' ? '' : `: ${excerpt(error)}`}.` +
       (status === 404
         ? ' The platform may not offer this read yet, and this Composer version needs it to check platform variables.'
         : ''),
   );
 
-const readThrewError = (read: ResolvedRead, cause: unknown): Error =>
-  new Error(
-    `${couldNotRead(read)} failed: ${cause instanceof Error ? cause.message : String(cause)}.`,
+const readThrewError = (read: ResolvedRead, cause: unknown): Error => {
+  const status = statusOf(cause);
+  const reason = withoutClosingStops(cause instanceof Error ? cause.message : String(cause));
+  return new Error(
+    `${couldNotRead(read)} failed${status === undefined ? '' : ` with HTTP ${String(status)}`}: ${reason}.`,
     { cause },
   );
+};
+
+const notJsonError = (read: ResolvedRead, status: number, body: unknown): Error => {
+  const shown = excerpt(body);
+  return new Error(
+    `${couldNotRead(read)} answered HTTP ${String(status)} with ${shown === '' ? 'an empty body' : `a body that is not JSON: ${shown}`}.`,
+  );
+};
 
 const unexpectedReadError = (read: ResolvedRead, problem: string): Error =>
   new Error(

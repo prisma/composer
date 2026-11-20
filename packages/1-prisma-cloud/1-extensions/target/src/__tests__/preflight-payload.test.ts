@@ -38,13 +38,13 @@ const graph = () =>
 const fakePlatform = (updatedAt: string | undefined): ManagementApiClient =>
   ({
     GET: async () => ({
-      data: {
+      data: JSON.stringify({
         group: { id: 'grp-production', name: 'production', class: 'production' },
         data:
           updatedAt === undefined
             ? []
             : [{ key: 'STRIPE_SECRET_KEY', updatedAt, isManagedBySystem: false }],
-      },
+      }),
       error: undefined,
       response: new Response(null, { status: 200 }),
     }),
