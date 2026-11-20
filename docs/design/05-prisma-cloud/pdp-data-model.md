@@ -106,7 +106,19 @@ Consequences Prisma Composer designs around:
    templates vs preview templates + per-branch overrides) — the substrate
    [an environment as a Branch](../10-domains/deploy-cli.md#environments-and-containers) is
    built on: an environment other than `production` is a Branch, and its config is written
-   preview-class with that Branch's overrides.
+   preview-class with that Branch's overrides. Under variable groups (below), a Branch
+   receives one group in place of a class.
+
+## Variable groups — the platform's planned model
+
+Prisma Cloud is moving variables into groups. This is designed in `projects/compute-env-var-groups/proposal.md` on the `pdp-control-plane` branch `chore/compute-env-var-groups-proposal`, and is not live yet. What Composer depends on:
+
+- **Variable groups.** Every project has a `production` group and a `preview` group, holding the rows the two classes hold today. A project can add custom groups, each with one rule on a branch's git name: `equals` or `startsWith`.
+- **One group per branch.** The production branch receives `production`. Any other branch receives the custom group with the most precise matching rule, or else `preview`. Groups do not combine.
+- **Service variables.** Values stored on one service, set only through the create-deployment request, deleted with the service.
+- **The order a deployment receives values:** every value of its branch's group, then the branch's overrides, then the service's variables. Later wins. The map is still frozen into the version when it is created.
+- **Branch overrides are being removed.** Three months after the platform work merges, a write that names a branch is rejected. Existing override rows keep applying until their branch is deleted.
+- **The resolved-variables read.** `GET /v1/projects/{projectId}/resolved-variables?branchId=…` returns the group the branch receives (`id`, `name`, `class`) and every key the branch receives, each with `updatedAt`, `isManagedBySystem` and a `source` (`group`, `branchOverride` or `service`). It returns no values and does not paginate. Deploy preflight reads it once per deploy ([ADR-0064](../90-decisions/ADR-0064-an-app-declares-its-platform-variables-in-its-root-and-the-deploy-copies-no-local-values.md)).
 
 ## Related
 

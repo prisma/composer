@@ -170,7 +170,7 @@ A pointer is typed by its source. `serviceOrigin()` and a plain `generatedParam(
 
 ### Platform variable
 
-A variable on the platform that a service reads by name at boot. The app declares each one with a [platform variable node](#platform-variable-node) in its root, so every message can name the node. The service reads it through a field of its `input`. "Plain platform variable" means the non-secret kind; the secret kind is a [platform secret](#platform-secret). A deploy does not copy its value from the developer's local environment and does not read it: the platform hands it to the running service. For now the operator sets it with `prisma project env add`. Under `prisma dev`, the local target plays the platform's part: it reads a plain platform variable's value from the app configuration and a platform secret's from the app secrets, and hands it to the local service. A variable has a class row (production or preview) and, on a preview environment, may have a branch row for one branch; the branch row wins ([ADR-0064](../90-decisions/ADR-0064-an-app-declares-its-platform-variables-in-its-root-and-the-deploy-copies-no-local-values.md)). Composer's own `COMPOSER_` rows are [variables on the platform](#a-variable-on-the-platform) but not platform variables, because the app does not declare them. In code: `PlatformVariableReader`, `UnsetPlatformVariable`, `PlatformVariableCheck`.
+A variable on the platform that a service reads by name at boot. The app declares each one with a [platform variable node](#platform-variable-node) in its root, so every message can name the node. The service reads it through a field of its `input`. "Plain platform variable" means the non-secret kind; the secret kind is a [platform secret](#platform-secret). A deploy does not copy its value from the developer's local environment and does not read it: the platform hands it to the running service. For now the operator sets it on Prisma Cloud, in the [variable group](#variable-group) the environment's branch receives. Under `prisma dev`, the local target plays the platform's part: it reads a plain platform variable's value from the app configuration and a platform secret's from the app secrets, and hands it to the local service. A service receives the value of its branch's group, under that branch's override row if it has one, under a [service variable](#service-variable) if its service has one; deploy preflight checks the group and the override, not the service variable ([ADR-0064](../90-decisions/ADR-0064-an-app-declares-its-platform-variables-in-its-root-and-the-deploy-copies-no-local-values.md)). Composer's own `COMPOSER_` rows are [variables on the platform](#a-variable-on-the-platform) but not platform variables, because the app does not declare them. In code: `PlatformVariableReader`, `UnsetPlatformVariable`, `PlatformVariableCheck`.
 
 ### Platform variable node
 
@@ -194,7 +194,15 @@ A [platform variable](#platform-variable) whose value is handled as a secret: bo
 
 ### A variable on the platform
 
-Any entry, or **row**, in a Prisma Cloud project's environment variables: a name and a non-empty text, at a class and optionally a branch. That includes Composer's own `COMPOSER_` rows, which are not [platform variables](#platform-variable). The term names the platform's storage, as distinct from what the app reads. Prisma Cloud calls these rows environment variables.
+Any entry, or **row**, in a Prisma Cloud project's environment variables: a name and a non-empty text. A **group row** belongs to a [variable group](#variable-group); what was called a class row is a row of the `production` or `preview` group. A **branch row** is one branch's override, which the platform is removing. That includes Composer's own `COMPOSER_` rows, which are not [platform variables](#platform-variable). The term names the platform's storage, as distinct from what the app reads. Prisma Cloud calls these rows environment variables.
+
+### Variable group
+
+Prisma Cloud's term for a named set of [variables on the platform](#a-variable-on-the-platform) in one project. Every project has a `production` group and a `preview` group; it can add custom groups, each with one rule on a branch's git name (`equals` or `startsWith`). Each branch receives exactly one group: the production branch receives `production`, any other branch the custom group with the most precise matching rule, or else `preview`. Groups do not combine. A group's class is `production`, `preview` or `custom`. This is the platform's planned model and not yet live.
+
+### Service variable
+
+Prisma Cloud's term for a value stored on one service, set through the create-deployment request or Console, and deleted with the service. It wins over the branch's group and override. Composer does not read or write one yet. This is the platform's planned model and not yet live.
 
 ### Value resource
 
