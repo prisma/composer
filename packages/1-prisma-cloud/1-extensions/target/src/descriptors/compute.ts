@@ -3,11 +3,7 @@
 import * as Prisma from '@alchemy.run/prisma';
 import type { ServiceLowering } from '@internal/core/deploy';
 import { describeDocument, type PlatformMarkerUse } from '@internal/input-document';
-import {
-  ARTIFACT_CONTENT_TYPE,
-  appAfterEnvironment,
-  packageComputeArtifact,
-} from '@internal/lowering';
+import { ARTIFACT_CONTENT_TYPE, appAfter, packageComputeArtifact } from '@internal/lowering';
 import * as Output from 'alchemy/Output';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
@@ -355,8 +351,12 @@ export function computeDescriptor(
         }),
       ),
 
-    deploy: ({ address, graph, preflight }, provisioned, artifact, serialized) =>
+    deploy: ({ id, address, graph, lowered, preflight }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
+        const providerOutputs = graph.edges
+          .filter((edge) => edge.kind === 'dependency' && edge.to === id)
+          .flatMap((edge) => Object.values(lowered.get(edge.from) ?? {}))
+          .filter(Output.isOutput);
         const { platformVariableVersion } = preflightView(preflight);
         // Env keys never contain ':', so a `<name>:updatedAt` member cannot
         // collide with a row's own trigger member. The key name is historical:
@@ -373,10 +373,9 @@ export function computeDescriptor(
         };
         const app = graph.root.id;
         const deployment = yield* Prisma.Deployment(resourceId(address, 'deployment'), {
-          // `app` carries the ordering edge on serialize's variable writes as
-          // well as the app id — see `appAfterEnvironment` for why it is the
-          // only prop that can (PRO-211).
-          app: appAfterEnvironment(provisioned.serviceId, serialized.environment),
+          // `app` carries the ordering edges as well as the app id — see
+          // `appAfter` for why it is the only prop that can.
+          app: appAfter(provisioned.serviceId, serialized.environment, providerOutputs),
           artifactPath: artifact.path,
           // The artifact IS a gzipped tar (see @internal/lowering's packager);
           // upstream sends this as the upload's Content-Type and folds it into

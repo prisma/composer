@@ -81,7 +81,7 @@ behind them.
 | `Prisma.Connection` | database connection info | database, name | connectionId, directConnectionString | Composer binds the DIRECT string explicitly; upstream's `databaseUrl` is pooled-first |
 | `Prisma.App` | App | project, displayName, regionId, branchId?, logicalId? | appId, appEndpointDomain | `branchId` targets the Branch of an environment other than `production`; omitted, upstream attaches the App to the project's default (production) Branch. `appEndpointDomain` is available at provision — that is what a service's own origin is read from |
 | `Prisma.EnvironmentVariable` | ConfigVariable | project, class, key, value (Redacted), branchId? | environmentVariableId | production-class with no `branchId` for `production`; preview-class with `branchId` for any other environment. Values are write-only, so upstream re-applies the desired one on every deploy |
-| `Prisma.Deployment` | Deployment (ComputeVersion) + Promotion | app, artifactPath, artifactContentType, portMapping, triggers, start, promote | deploymentId, appEndpointDomain | provider reconcile: create → upload tar.gz → start → poll until running → promote; `appEndpointDomain` read **post-promote** (create-time domain is a placeholder — PRO-200). It is replaced, not updated, when its artifact fingerprint or its `triggers` fingerprint moves |
+| `Prisma.Deployment` | Deployment (ComputeVersion) + Promotion | app, artifactPath, artifactContentType, portMapping, triggers, start, promote | deploymentId, appEndpointDomain | provider reconcile: create → upload tar.gz → start → poll until running → promote; `appEndpointDomain` read **post-promote**; since the PRO-200 fix it is the same domain the App reports from its create. It is replaced, not updated, when its artifact fingerprint or its `triggers` fingerprint moves |
 | `Prisma.Bucket` | Bucket | project, name, branchId?, logicalId? | bucketId, name | one per bucket resource; `Prisma.BucketAccessKey` mints its read-write S3 credentials, which become the node's outputs |
 
 `logicalId` is set on every deploy except branchless local dev; [§ Platform identity](#platform-identity-logicalid) says what it carries.
@@ -229,6 +229,7 @@ flowchart TB
     EVs -- resource ref --> Ds
     Sa -- appEndpointDomain --> EVu["EnvironmentVariable(COMPOSER_SHOP_STOREFRONT_AUTH_URL)"]
     EVu -- resource ref --> Ds
+    Da -- "serviceId (after promote)" --> Ds
   end
 ```
 
@@ -240,9 +241,8 @@ How the pieces map:
   `Database → Connection`, whose url is written as that service's **explicitly
   named** variable — the same `serialize` path as any other config value.
 - **The connection** lowers to two edges: the producer's App's endpoint domain flows into a named `EnvironmentVariable`, and that **whole resource flows into the consumer's `Deployment`** through its `app` prop. The domain comes from the App, not the Deployment: the Deployment is promoted on every deploy, so its domain is unknown while planning, and a reading service's deployment, whose triggers hold the value, would be replaced on every deploy. Because the App's domain is known, an unchanged reading service keeps its deployment when the service it reads is redeployed.
-- Every `EnvironmentVariable` a Deployment boots with is threaded into its
-  `app` — database URLs and connection URLs alike — so the deployment
-  depends on its config being written first.
+- Every `EnvironmentVariable` a Deployment boots with is threaded into its `app` — database URLs and connection URLs alike — so the deployment depends on its config being written first.
+- Every output of the services and resources a service reads is threaded into its Deployment's `app` too, so its deployment waits for the promotion of the services it reads: a Compute service's `serviceId` comes from its Deployment and resolves only after the promotion. The wait is on `app`, not in `triggers`, and upstream treats an unresolved `app` as unchanged, so an unchanged reading service is not replaced.
 - The Deployment's `portMapping.http` rides the same seam: `serialize` resolves
   the service's `port` param from the typed Config and surfaces it in its
   outputs, and `deploy` routes the platform to it — so the routed port and the

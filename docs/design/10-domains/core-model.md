@@ -766,13 +766,7 @@ module-provisioned **resource** lowers exactly once via its extension's
 nodes are edges only and never lower. Then for each service:
 
 1. `provision` — the service now has identity (its App).
-2. core **builds the typed `Config`** — each input's declared params matched by
-   name to its producer's `outputs` through the one `dependency` edge:
-   whatever the module wired in — a resource's outputs (shared by every consumer
-   wired to it) or a producer service's deploy outputs (the producer, earlier in
-   topo order, is already fully deployed — its URL is real, not the create-time
-   placeholder) — plus service-param defaults. Leaf values are provisioning refs,
-   not strings.
+2. core **builds the typed `Config`** — each input's declared params matched by name to its producer's `outputs` through the one `dependency` edge: whatever the module wired in — a resource's outputs (shared by every consumer wired to it) or a producer service's deploy outputs — plus service-param defaults. Leaf values are provisioning refs, not strings. A producer service's URL is its App's endpoint domain, known from the App's create. The producer is still deployed first: the consumer's deployment waits for the producer's outputs through its `app` prop, and a Compute producer's `serviceId` resolves only after its promotion.
 3. `serialize(config)` — the pack encodes that typed Config into the service's
    runtime environment (Prisma Cloud: one env write per leaf, keyed by the
    pack's own naming from the address, value = the ref; the input document
@@ -1133,18 +1127,23 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
           Effect.try(() => Prisma.packageComputeArtifact({ id, bundleDir: assembled.dir, appEntry: assembled.entry, address, inputDocument: serialized.input && JSON.parse(serialized.input.value) })),
 
         // create → upload → start → promote. The app id is read through
-        // serialize's env-var records, so the deployment depends on them — the
-        // ordering edge that kills PRO-211. Returns a LoweredResult: `url` IS
+        // serialize's env-var records and every output of the services it reads,
+        // so the deployment is created after its rows are written (PRO-211) and
+        // after the services it reads are promoted. Returns a LoweredResult: `url` IS
         // published here — a Compute service's deployed URL is a public endpoint,
         // and this descriptor is the only party that knows it. It is the App's
         // domain, not the deployment's: the deployment is promoted on every
         // deploy, so its domain is unknown while planning, and every service
         // reading the URL would get a new deployment. Both fields are still
         // Output refs until apply.
-        deploy: ({ address }, provisioned, artifact, serialized) =>
+        deploy: ({ id, address, graph, lowered }, provisioned, artifact, serialized) =>
           Effect.gen(function* () {
+            const providerOutputs = graph.edges
+              .filter((edge) => edge.kind === "dependency" && edge.to === id)
+              .flatMap((edge) => Object.values(lowered.get(edge.from) ?? {}))
+              .filter(Output.isOutput)
             const deployment = yield* Prisma.Deployment(`${address}.deployment`, {
-              app: appAfterEnvironment(provisioned.serviceId, serialized.environment),
+              app: appAfter(provisioned.serviceId, serialized.environment, providerOutputs),
               artifactPath: artifact.path,
               artifactContentType: "application/gzip",
               portMapping: { http: serialized.port }, start: true, promote: true,

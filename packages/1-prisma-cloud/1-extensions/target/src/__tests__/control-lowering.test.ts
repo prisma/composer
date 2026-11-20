@@ -1712,7 +1712,8 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     const ctx = {
       id: 'shop.auth',
       address: 'shop.auth',
-      graph: { root: { id: 'shop' } },
+      graph: { root: { id: 'shop' }, edges: [] },
+      lowered: new Map(),
       opts: {},
     } as unknown as LowerContext;
     const provisioned = {
@@ -1784,7 +1785,8 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     const ctx = {
       id: 'shop.auth',
       address: 'shop.auth',
-      graph: { root: { id: 'shop' } },
+      graph: { root: { id: 'shop' }, edges: [] },
+      lowered: new Map(),
       opts: {},
     } as unknown as LowerContext;
     const provisioned = {
@@ -1827,7 +1829,8 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     const ctx = {
       id: 'shop.mailer',
       address: 'shop.mailer',
-      graph: { root: { id: 'shop' } },
+      graph: { root: { id: 'shop' }, edges: [] },
+      lowered: new Map(),
       opts: {},
     } as unknown as LowerContext;
     const provisioned = {
@@ -1870,7 +1873,8 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     const ctx = {
       id: 'shop.auth',
       address: 'shop.auth',
-      graph: { root: { id: 'shop' } },
+      graph: { root: { id: 'shop' }, edges: [] },
+      lowered: new Map(),
       opts: {},
     } as unknown as LowerContext;
     const provisioned = {
@@ -2021,7 +2025,8 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
     const ctx = {
       id: 'shop.store',
       address: 'shop.store',
-      graph: { root: { id: 'shop' } },
+      graph: { root: { id: 'shop' }, edges: [] },
+      lowered: new Map(),
       opts: {},
     } as unknown as LowerContext;
     const provisioned = {
@@ -3111,11 +3116,17 @@ describe('resource IDs are built from the full address, and each declares the ID
     recorded.renamePolicy.filter(([r]) => r === resource).at(-1)?.[1];
   const idsSince = (rows: ReadonlyArray<[string, unknown]>, before: number) =>
     rows.slice(before).map(([id]) => id);
-  const shopGraph = { root: { id: 'shop' } };
+  const shopGraph = { root: { id: 'shop' }, edges: [] };
 
   test('compute: the App and Deployment of a nested service', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
-    const ctx = { id: 'shop.auth.api', address: 'shop.auth.api', graph: shopGraph, application };
+    const ctx = {
+      id: 'shop.auth.api',
+      address: 'shop.auth.api',
+      graph: shopGraph,
+      application,
+      lowered: new Map(),
+    };
     const before = { svc: recorded.svc.length, deploy: recorded.deploy.length };
 
     run(serviceDescriptorOf(target, 'compute').provision(ctx as unknown as LowerContext));

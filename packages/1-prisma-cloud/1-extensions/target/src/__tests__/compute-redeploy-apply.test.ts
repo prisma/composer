@@ -12,6 +12,8 @@ import {
   scratchStack,
 } from '@internal/lowering/scratch-stack';
 import * as Provider from 'alchemy/Provider';
+import * as Deferred from 'effect/Deferred';
+import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import { compute } from '../compute.ts';
@@ -28,6 +30,9 @@ interface FakePlatform {
   readonly created: unknown[];
   readonly variables: Map<string, Record<string, unknown>>;
   readonly values: Map<string, unknown>;
+  readonly events: string[];
+  /** While set, `shop.auth`'s deployment create waits until `shop.web`'s arrives, so a reader that does not wait for its provider is created first. */
+  gate: Deferred.Deferred<void> | undefined;
 }
 
 function record(body: unknown): Record<string, unknown> {
@@ -97,6 +102,7 @@ function respond(platform: FakePlatform, method: string, url: URL, body: unknown
     }
     if (method === 'POST' && action === '/deployments') {
       platform.created.push(service['id']);
+      platform.events.push(`create:${service['logicalId']}`);
       const id = `dep_${platform.created.length}`;
       const deployment = {
         id,
@@ -113,6 +119,7 @@ function respond(platform: FakePlatform, method: string, url: URL, body: unknown
     }
     if (method === 'POST' && action === '/promote') {
       service['latestDeploymentId'] = sent['deploymentId'];
+      platform.events.push(`promote:${service['logicalId']}`);
       return data({ appEndpointDomain: service['appEndpointDomain'], reassignedDomains: 0 });
     }
   }
@@ -181,9 +188,22 @@ function fakePlatform() {
     created: [],
     variables: new Map(),
     values: new Map(),
+    events: [],
+    gate: undefined,
   };
   const api = fakeManagementApi(({ method, path, body }) =>
-    Effect.sync(() => respond(platform, method, new URL(path, 'https://api.prisma.test'), body)),
+    Effect.gen(function* () {
+      const url = new URL(path, 'https://api.prisma.test');
+      const creating =
+        method === 'POST' ? url.pathname.match(/^\/v1\/services\/([^/]+)\/deployments$/) : null;
+      const address = platform.services.get(creating?.[1] ?? '')?.['logicalId'];
+      const gate = platform.gate;
+      if (gate !== undefined && address === 'shop.web') yield* Deferred.succeed(gate, undefined);
+      if (gate !== undefined && address === 'shop.auth') {
+        yield* Deferred.await(gate).pipe(Effect.timeoutOption(Duration.millis(500)));
+      }
+      return respond(platform, method, url, body);
+    }),
   );
   const providers = Layer.effect(
     Prisma.Providers,
@@ -228,7 +248,11 @@ const web = compute({
 });
 
 const descriptor = computeDescriptor(() => ({ workspaceId: 'ws_1', providerParams: new Map() }));
-const graph = { root: { id: 'shop' }, inputBindings: [], edges: [] };
+const graph = {
+  root: { id: 'shop' },
+  inputBindings: [],
+  edges: [{ from: 'shop.auth', to: 'shop.web', input: 'auth', kind: 'dependency' }],
+};
 const application = {
   projectId: PROJECT_ID,
   branchId: undefined,
@@ -239,10 +263,11 @@ const application = {
 const artifact = { path: import.meta.path, sha256: 'sha-artifact' };
 const changedArtifact = { path: path.join(import.meta.dir, '..', 'compute.ts'), sha256: 'sha-2' };
 
-function program(authArtifact = artifact) {
+function program(authArtifact = artifact, webArtifact = artifact) {
   return Effect.gen(function* () {
+    const lowered = new Map<string, Readonly<Record<string, unknown>>>();
     const ctxOf = (address: string, node: unknown) =>
-      ({ address, node, graph, application }) as unknown as LowerContext;
+      ({ id: address, address, node, graph, application, lowered }) as unknown as LowerContext;
     const authCtx = ctxOf('shop.auth', auth);
     const webCtx = ctxOf('shop.web', web);
     const authProvisioned = yield* descriptor.provision(authCtx);
@@ -257,11 +282,12 @@ function program(authArtifact = artifact) {
       authArtifact,
       authSerialized,
     );
+    lowered.set('shop.auth', deployed.outputs);
     const webSerialized = yield* descriptor.serialize(webCtx, webProvisioned, {
       service: { port: 3000 },
       inputs: { auth: { url: deployed.outputs['url'] } },
     });
-    yield* descriptor.deploy(webCtx, webProvisioned, artifact, webSerialized);
+    yield* descriptor.deploy(webCtx, webProvisioned, webArtifact, webSerialized);
   }) as Effect.Effect<void>;
 }
 
@@ -286,4 +312,29 @@ test('a new artifact for the service that is read replaces its deployment and ke
 
   expect(createdFor('shop.auth')).toHaveLength(2);
   expect(createdFor('shop.web')).toHaveLength(1);
+});
+
+test("on a first deploy, the service that is read is promoted before the reading service's deployment is created", async () => {
+  const { platform, stack } = fakePlatform();
+  platform.gate = Deferred.makeUnsafe<void>();
+
+  await runScratch(stack.deploy(program()));
+
+  expect(platform.events.indexOf('promote:shop.auth')).toBeLessThan(
+    platform.events.indexOf('create:shop.web'),
+  );
+});
+
+test("when both artifacts change, the service that is read is promoted before the reading service's new deployment is created", async () => {
+  const { platform, createdFor, stack } = fakePlatform();
+  await runScratch(stack.deploy(program()));
+  platform.events.length = 0;
+  platform.gate = Deferred.makeUnsafe<void>();
+
+  await runScratch(stack.deploy(program(changedArtifact, changedArtifact)));
+
+  expect(createdFor('shop.web')).toHaveLength(2);
+  expect(platform.events.indexOf('promote:shop.auth')).toBeLessThan(
+    platform.events.indexOf('create:shop.web'),
+  );
 });
