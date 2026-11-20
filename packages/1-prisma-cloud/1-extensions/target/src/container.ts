@@ -46,6 +46,8 @@ function invalidAlchemyStageError(branchId: string): Error {
 export class PrismaCloudContainer implements ContainerInstance {
   /** The deterministic Alchemy stage (ContainerInstance SPI): the environment's Branch id, or the default Branch's id for `production`. Absent only for the dev container, which resolves no Branch. */
   readonly alchemyStage: string | undefined;
+  /** The Branch this deploy targets: the environment's Branch, or the project's default Branch for `production`. Absent only for the dev container. */
+  readonly deployBranchId: string | undefined;
 
   constructor(
     readonly input: LocateContainerInput,
@@ -55,11 +57,11 @@ export class PrismaCloudContainer implements ContainerInstance {
     /** Set only by the dev container, which resolves no Branches. */
     readonly branchless: boolean = false,
   ) {
-    const deployBranchId = branchId ?? defaultBranchId;
-    if (deployBranchId !== undefined && !ALCHEMY_STAGE_PATTERN.test(deployBranchId)) {
-      throw invalidAlchemyStageError(deployBranchId);
+    this.deployBranchId = branchId ?? defaultBranchId;
+    if (this.deployBranchId !== undefined && !ALCHEMY_STAGE_PATTERN.test(this.deployBranchId)) {
+      throw invalidAlchemyStageError(this.deployBranchId);
     }
-    this.alchemyStage = deployBranchId;
+    this.alchemyStage = this.deployBranchId;
   }
 
   serialize(): string {

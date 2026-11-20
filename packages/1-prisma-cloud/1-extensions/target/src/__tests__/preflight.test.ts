@@ -45,7 +45,6 @@ const build = {
   entry: 'server.js',
 };
 
-/** A row of the environment-variable list, which only the key-clash check still reads. */
 interface Row {
   projectId: string;
   class: 'production' | 'preview';
@@ -61,7 +60,6 @@ type Source =
 /** One key the resolved-variables read lists for the branch. */
 interface Entry {
   key: string;
-  /** Defaulted by the fake client. */
   updatedAt?: string;
   isManagedBySystem?: boolean;
   source?: Source;
@@ -90,6 +88,8 @@ interface FakeState {
   group?: Group;
   /** Replaces the read's answer: an error status, or a body of the test's own. */
   answer?: { status: number; body?: unknown; error?: unknown };
+  /** Makes the read throw, as the client does on a network failure or a body that is not JSON. */
+  throws?: Error;
 }
 
 const emptyState = (): FakeState => ({ gets: [], reads: [], posts: [], rows: [], entries: [] });
@@ -112,6 +112,7 @@ const fakeClient = (state: FakeState): ManagementApiClient =>
         const projectId = init.params.path?.['projectId'] ?? '';
         const branchId = init.params.query['branchId'] ?? '';
         state.reads.push({ projectId, branchId });
+        if (state.throws !== undefined) throw state.throws;
         if (state.answer !== undefined) {
           const ok = state.answer.status < 400;
           return {
@@ -446,61 +447,121 @@ describe('the deploy check reads which variables the branch receives and sets no
     expect(state.gets).toEqual([]);
   });
 
-  describe('a failed read fails the deploy, naming the call, the status, the project and the branch', () => {
+  const COULD_NOT_READ =
+    'Deploy failed. Composer could not read which variables branch "br-1" of project "proj" receives: GET /v1/projects/proj/resolved-variables?branchId=br-1';
+
+  const failedReadMessage = async () => {
+    const message = await failureOf(
+      preflightWith({ graph: secretGraph(), ...preview }, { client: fakeClient(state) }),
+    );
+    expect(state.reads).toHaveLength(1);
+    expect(state.gets).toEqual([]);
+    expect(state.posts).toEqual([]);
+    return message;
+  };
+
+  describe('a failed read fails the deploy, naming the call, the project and the branch', () => {
     test.each([
-      ['an unknown project', 404, { code: 'not-found', message: 'Project not found' }],
-      ['an unknown branch', 404, { code: 'not-found', message: 'Branch not found' }],
-      ['a server error', 500, { code: 'internal', message: 'boom' }],
-    ])('%s', async (_case, status, error) => {
-      state.answer = { status, error };
+      ['an unknown project', { code: 'not-found', message: 'Project not found' }],
+      ['an unknown branch', { code: 'not-found', message: 'Branch not found' }],
+    ])('%s answers 404, which says the platform may not offer the read', async (_case, error) => {
+      state.answer = { status: 404, error: { error } };
 
-      const message = await failureOf(
-        preflightWith({ graph: secretGraph(), ...preview }, { client: fakeClient(state) }),
-      );
-
-      expect(message).toBe(
-        `Deploy failed. GET /v1/projects/proj/resolved-variables?branchId=br-1 answered HTTP ${status}: ${JSON.stringify(error)}. ` +
+      expect(await failedReadMessage()).toBe(
+        `${COULD_NOT_READ} answered HTTP 404: ${JSON.stringify({ error })}. ` +
           'The platform may not offer this read yet, and this Composer version needs it to check platform variables.',
       );
-      expect(state.reads).toHaveLength(1);
-      expect(state.gets).toEqual([]);
-      expect(state.posts).toEqual([]);
+    });
+
+    test('a server error names its status and body, and does not blame a missing read', async () => {
+      state.answer = { status: 500, error: { error: { code: 'internal', message: 'boom' } } };
+
+      expect(await failedReadMessage()).toBe(
+        `${COULD_NOT_READ} answered HTTP 500: {"error":{"code":"internal","message":"boom"}}.`,
+      );
+    });
+
+    test('an error status with an empty body names the status', async () => {
+      state.answer = { status: 502 };
+
+      expect(await failedReadMessage()).toBe(`${COULD_NOT_READ} answered HTTP 502.`);
+    });
+
+    test('a network failure names the call and keeps the cause', async () => {
+      const cause = new TypeError('fetch failed');
+      state.throws = cause;
+
+      const error = await preflightWith(
+        { graph: secretGraph(), ...preview },
+        { client: fakeClient(state) },
+      ).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe(`${COULD_NOT_READ} failed: fetch failed.`);
+      expect((error as Error).cause).toBe(cause);
+    });
+
+    test('a body that is not JSON names the call', async () => {
+      state.throws = new SyntaxError('Unexpected token \'<\', "<html>" is not valid JSON');
+
+      expect(await failedReadMessage()).toBe(
+        `${COULD_NOT_READ} failed: Unexpected token '<', "<html>" is not valid JSON.`,
+      );
+    });
+
+    test('a body without the group names the call and says the answer may have changed', async () => {
+      state.answer = { status: 200, body: { data: [] } };
+
+      const message = await failedReadMessage();
+
+      expect(message).toStartWith(
+        `${COULD_NOT_READ} answered with a body this Composer version cannot read: `,
+      );
+      expect(message).toEndWith(
+        "The platform's answer may have changed, and a newer Composer version may read it.",
+      );
     });
   });
 
   test.each([
-    ['a pagination object', { pagination: { nextCursor: 'c1', hasMore: true } }],
+    ['a pagination object with more to fetch', { pagination: { nextCursor: 'c1', hasMore: true } }],
+    ['a pagination object with a cursor', { pagination: { nextCursor: 'c1', hasMore: false } }],
     ['a next cursor', { nextCursor: 'c1' }],
-    ['a more-pages flag', { hasMore: false }],
+    ['a cursor', { cursor: 'c1' }],
+    ['a more-pages flag', { hasMore: true }],
   ])(
-    'an answer that carries %s fails the deploy as too old for the platform',
+    'an answer that says it has more, with %s, fails the deploy as too old for the platform',
     async (_case, extra) => {
-      state.answer = {
-        status: 200,
-        body: { group: builtInGroup('br-1'), data: [], ...extra },
-      };
+      state.answer = { status: 200, body: { group: builtInGroup('br-1'), data: [], ...extra } };
 
-      const message = await failureOf(
-        preflightWith({ graph: secretGraph(), ...preview }, { client: fakeClient(state) }),
-      );
+      const message = await failedReadMessage();
 
-      expect(message).toStartWith(
-        'Deploy failed. GET /v1/projects/proj/resolved-variables?branchId=br-1 answered with one page of a longer list.',
-      );
+      expect(message).toStartWith(`${COULD_NOT_READ} answered with one page of a longer list.`);
       expect(message).toContain('too old for the platform');
     },
   );
 
-  test('an answer without the group fails the deploy instead of guessing', async () => {
-    state.answer = { status: 200, body: { data: [] } };
+  test.each([
+    ['a complete pagination object', { pagination: { nextCursor: null, hasMore: false } }],
+    ['top-level fields that say nothing is left', { nextCursor: null, hasMore: false, cursor: '' }],
+  ])('a complete answer in a list envelope, with %s, is accepted', async (_case, extra) => {
+    state.answer = {
+      status: 200,
+      body: {
+        group: builtInGroup('br-1'),
+        data: [
+          { key: 'STRIPE_SECRET_KEY', updatedAt: DEFAULT_UPDATED_AT, isManagedBySystem: false },
+        ],
+        ...extra,
+      },
+    };
 
-    const message = await failureOf(
-      preflightWith({ graph: secretGraph(), ...preview }, { client: fakeClient(state) }),
+    const result = await preflightWith(
+      { graph: requiredSecretGraph(), ...preview },
+      { client: fakeClient(state) },
     );
 
-    expect(message).toStartWith(
-      'Deploy failed. GET /v1/projects/proj/resolved-variables?branchId=br-1 answered with a body this Composer version cannot read: ',
-    );
+    expect([...result.updatedAt]).toEqual([['STRIPE_SECRET_KEY', DEFAULT_UPDATED_AT]]);
   });
 
   describe('the commands that set a missing variable follow the group the branch receives', () => {
@@ -525,12 +586,16 @@ describe('the deploy check reads which variables the branch receives and sets no
       ]);
     });
 
-    test('a custom group is named, quoted to paste', async () => {
-      expect(await commandsFor({ id: 'grp-1', name: `it's "staging" x`, class: 'custom' })).toEqual(
-        [
-          `Set STRIPE_SECRET_KEY in the variable group 'it'\\''s "staging" x' in the Prisma Console.`,
-        ],
-      );
+    test('a custom group is named in a sentence, since no command writes to it', async () => {
+      expect(await commandsFor({ id: 'grp-1', name: "team's staging", class: 'custom' })).toEqual([
+        `Set STRIPE_SECRET_KEY in the variable group "team's staging" in the Prisma Console.`,
+      ]);
+    });
+
+    test('a group of a class Composer does not know gets the custom-group sentence', async () => {
+      expect(
+        await commandsFor({ id: 'grp-2', name: 'qa', class: 'experimental' as Group['class'] }),
+      ).toEqual([`Set STRIPE_SECRET_KEY in the variable group "qa" in the Prisma Console.`]);
     });
 
     test('no command sets a branch override', async () => {
@@ -580,7 +645,7 @@ describe('the deploy check reads which variables the branch receives and sets no
 
     expect(message).toEndWith(
       'Set it on the platform, then deploy again:\n' +
-        "  - Set STRIPE_SECRET_KEY in the variable group 'staging' in the Prisma Console.",
+        '  - Set STRIPE_SECRET_KEY in the variable group "staging" in the Prisma Console.',
     );
   });
 

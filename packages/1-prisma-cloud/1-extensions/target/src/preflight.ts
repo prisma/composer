@@ -69,7 +69,6 @@ async function listEnvVars(
 
 const RESOLVED_VARIABLES_PATH = '/v1/projects/{projectId}/resolved-variables';
 
-/** The fields of the resolved-variables read that preflight uses: names and times, never values. */
 const resolvedVariablesBody = type({
   group: { name: 'string', class: 'string' },
   data: type({ key: 'string', updatedAt: 'string', isManagedBySystem: 'boolean' }).array(),
@@ -84,44 +83,58 @@ interface ResolvedVariablesClient {
   ): Promise<{ readonly data?: unknown; readonly error?: unknown; readonly response: Response }>;
 }
 
-const PAGINATION_FIELDS = ['pagination', 'nextCursor', 'hasMore', 'cursor'];
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
+
+const isCursor = (value: unknown): boolean => value !== undefined && value !== null && value !== '';
+
+const saysThereIsMore = (fields: Record<string, unknown>): boolean =>
+  fields['hasMore'] === true || isCursor(fields['nextCursor']) || isCursor(fields['cursor']);
+
+const isPartial = (body: unknown): boolean =>
+  isRecord(body) &&
+  (saysThereIsMore(body) || (isRecord(body['pagination']) && saysThereIsMore(body['pagination'])));
+
+interface ResolvedRead {
+  readonly call: string;
+  readonly projectId: string;
+  readonly branchId: string;
+}
 
 async function readResolvedVariables(
   client: ManagementApiClient,
   projectId: string,
   branchId: string,
 ): Promise<ResolvedVariables> {
-  const call = `GET /v1/projects/${projectId}/resolved-variables?branchId=${branchId}`;
+  const read: ResolvedRead = {
+    call: `GET /v1/projects/${projectId}/resolved-variables?branchId=${branchId}`,
+    projectId,
+    branchId,
+  };
   const res = await blindCast<
     ResolvedVariablesClient,
     'the published Management API SDK does not describe the resolved-variables read yet; its body is checked below'
-  >(client).GET(RESOLVED_VARIABLES_PATH, {
-    params: { path: { projectId }, query: { branchId } },
-  });
+  >(client)
+    .GET(RESOLVED_VARIABLES_PATH, { params: { path: { projectId }, query: { branchId } } })
+    .catch((cause: unknown) => {
+      throw readThrewError(read, cause);
+    });
   if (res.error !== undefined || !res.response.ok) {
-    throw resolvedReadFailedError(call, res.response.status, res.error);
+    throw readStatusError(read, res.response.status, res.error);
   }
-  const body = res.data;
-  if (isRecord(body) && PAGINATION_FIELDS.some((field) => field in body)) {
-    throw pagedReadError(call);
-  }
-  const parsed = resolvedVariablesBody(body);
-  if (parsed instanceof type.errors) throw unexpectedReadError(call, parsed.summary);
+  if (isPartial(res.data)) throw pagedReadError(read);
+  const parsed = resolvedVariablesBody(res.data);
+  if (parsed instanceof type.errors) throw unexpectedReadError(read, parsed.summary);
   return parsed;
 }
 
-/** The branch whose variables the environment receives: its own, or the project's default branch for production. */
 function deployBranchIdOf(container: PrismaCloudContainer): string {
-  const branchId = container.branchId ?? container.defaultBranchId;
-  if (branchId === undefined) {
+  if (container.deployBranchId === undefined) {
     throw new Error(
       `deploy preflight: the container for the environment "${container.input.environment}" has no branch id. This is a bug in Composer.`,
     );
   }
-  return branchId;
+  return container.deployBranchId;
 }
 
 /** Whether `key` has a row in the scope Composer writes its own rows to: production, or the environment's branch. */
@@ -203,23 +216,32 @@ const listFailedError = (key: string, error: unknown): Error =>
     `deploy preflight: Prisma Management API error listing "${key}": ${JSON.stringify(error)}.`,
   );
 
-const MAY_NOT_OFFER_READ =
-  'The platform may not offer this read yet, and this Composer version needs it to check platform variables.';
+const couldNotRead = (read: ResolvedRead): string =>
+  `Deploy failed. Composer could not read which variables branch "${read.branchId}" of project "${read.projectId}" receives: ${read.call}`;
 
-const resolvedReadFailedError = (call: string, status: number, error: unknown): Error =>
+const readStatusError = (read: ResolvedRead, status: number, error: unknown): Error =>
   new Error(
-    `Deploy failed. ${call} answered HTTP ${String(status)}` +
-      `${error === undefined ? '' : `: ${JSON.stringify(error)}`}. ${MAY_NOT_OFFER_READ}`,
+    `${couldNotRead(read)} answered HTTP ${String(status)}` +
+      `${error === undefined || error === '' ? '' : `: ${JSON.stringify(error)}`}.` +
+      (status === 404
+        ? ' The platform may not offer this read yet, and this Composer version needs it to check platform variables.'
+        : ''),
   );
 
-const unexpectedReadError = (call: string, problem: string): Error =>
+const readThrewError = (read: ResolvedRead, cause: unknown): Error =>
   new Error(
-    `Deploy failed. ${call} answered with a body this Composer version cannot read: ${problem}. ${MAY_NOT_OFFER_READ}`,
+    `${couldNotRead(read)} failed: ${cause instanceof Error ? cause.message : String(cause)}.`,
+    { cause },
   );
 
-const pagedReadError = (call: string): Error =>
+const unexpectedReadError = (read: ResolvedRead, problem: string): Error =>
   new Error(
-    `Deploy failed. ${call} answered with one page of a longer list. This Composer version reads only one page, so it would report set variables as missing. It is too old for the platform: upgrade Composer and deploy again.`,
+    `${couldNotRead(read)} answered with a body this Composer version cannot read: ${problem}. The platform's answer may have changed, and a newer Composer version may read it.`,
+  );
+
+const pagedReadError = (read: ResolvedRead): Error =>
+  new Error(
+    `${couldNotRead(read)} answered with one page of a longer list. This Composer version reads only one page, so it would report set variables as missing. It is too old for the platform: upgrade Composer and deploy again.`,
   );
 
 /** `value` as one POSIX shell word: single-quoted, each embedded `'` written as `'\''`. */
@@ -233,7 +255,7 @@ function setCommands(name: string, projectId: string, group: VariableGroup): rea
     case 'preview':
       return [`${add} --role preview`];
     default:
-      return [`Set ${name} in the variable group ${shellQuote(group.name)} in the Prisma Console.`];
+      return [`Set ${name} in the variable group "${group.name}" in the Prisma Console.`];
   }
 }
 
