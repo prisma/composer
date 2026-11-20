@@ -20,7 +20,7 @@ This replaces #2698 and #2701. Both were written when Prisma refused to create a
 
 The deploy creates the row in Prisma at once and succeeds. Prisma makes the row `active` once the TXT record and the CNAME resolve. Prisma also creates the domain ownership for the exact hostname; the resource never creates, verifies or deletes one. That is the per-hostname TXT record, with no shared ownership for stacks to fight over.
 
-1. **Identity is the `logicalId`**, which defaults to the resource's name. With no stored id, the row with that `logicalId` on the service's Branch is this resource's. A row for the same service and hostname with no `logicalId` is taken over by writing its `logicalId`; Prisma recorded every existing custom domain as such a row on 2026-11-17.
+1. **Identity is the `logicalId`**, which defaults to the resource's fully qualified name (`Site/Url` for a `Url` declared inside `Site`). With no stored id, the row with that `logicalId` on the service's Branch is this resource's. A row for the same service and hostname with no `logicalId` is taken over by writing its `logicalId`; Prisma recorded every existing custom domain as such a row on 2026-11-17.
 2. **Another row on the Branch with the hostname** fails the deploy with `RoutingUrlHostnameTaken`, which names it.
 3. **Changes** to the hostname, the service or the `logicalId` are sent as one `PATCH`. A redeploy with nothing changed sends none.
 4. **A hostname change on an `active` row is checked first.** Prisma itself would accept the change and stop serving the old hostname at once, so the resource refuses it, before any `PATCH`, with `RoutingUrlHostnameChangeRefused`, unless the new hostname can serve:
@@ -28,7 +28,7 @@ The deploy creates the row in Prisma at once and succeeds. Prisma makes the row 
    - it points at the switchboard at every authoritative nameserver: a CNAME to the switchboard, or, for a hostname with no CNAME (an apex behind CNAME flattening, ALIAS or ANAME), A or AAAA answers that include a switchboard address. A CNAME to any other name does not pass.
 
    The error names both hostnames and the records to publish. Its `ownership` and `switchboardDns` fields say whether each was seen, absent, or could not be checked from this machine, so a caller need not read the message.
-5. **Prisma's refusals are typed errors**, caught by the tag Distilled generates from the code in the response: `RoutingUrlQuotaExceeded` and `RoutingUrlLogicalIdTaken` (409), `RoutingUrlInvalidHostname`, `RoutingUrlServiceNotOnABranch` (create) and `RoutingUrlServiceOnAnotherBranch` (update) (422). Any other 409 or 422 is `RoutingUrlOperationFailed`.
+5. **Prisma's refusals are typed errors**, caught by the tag Distilled generates from the code in the response: `RoutingUrlQuotaExceeded` and `RoutingUrlLogicalIdTaken` (409), `RoutingUrlInvalidHostname`, `RoutingUrlServiceNotOnABranch` (create) and `RoutingUrlServiceOnAnotherBranch` (update) (422). Any other 409 or 422 is `RoutingUrlOperationFailed`. The resource also raises `RoutingUrlServiceNotOnABranch` itself, before any request, when it reads a service with no Branch. These errors keep Distilled's names because each is the same refusal with a message that says what to do; `PrismaDomainOwnershipRequired` keeps its prefix because #2698 introduced it under that name.
 6. **Destroy** deletes the row and sends no domain ownership request.
 
 #### `dns`
@@ -42,7 +42,7 @@ With a DNS adapter, the deploy publishes the two records and nothing else.
 - A wildcard hostname is refused before anything is published.
 - Limits, all in the JSDoc and the Compute guide: a zone apex needs a DNS host that flattens a CNAME at the apex; the first deploy replaces an existing CNAME at the hostname without waiting for `active`, so a hostname moving from another host stops serving there first; removing `dns` removes the records; a record already published with the same value is treated as the resource's own and removed on destroy.
 
-A caller that builds its own provider list registers the resource with `Prisma.RoutingUrlResources` and `Prisma.RoutingUrlProvider()`. `Prisma.RoutingUrl` is a function, so it has no `.ref` or `.Provider`.
+A caller that builds its own provider list registers the resource with `Prisma.RoutingUrlResources` and `Prisma.RoutingUrlProvider()`. `Prisma.RoutingUrl` is a function, so it has no `.ref` or `.Provider`. Two read-only resource types now appear in a stack's state: `Prisma.RoutingUrlRequiredRecords` (the two records a hostname needs, with `dns`) and `Prisma.DomainVerification` (the workspace's TXT record, for `Prisma.DomainOwnership`). Neither creates anything in Prisma.
 
 Two known limits of the hostname-change check. A RoutingUrl in another workspace that holds the new hostname is not seen, so the change goes through and the new hostname stays `pending` behind `heldBy`. And the check does not cover the certificate, so the new hostname can be without TLS for a short time after an allowed change.
 
@@ -51,13 +51,13 @@ Two known limits of the hostname-change check. A RoutingUrl in another workspace
 A site with a `domain` declares one `Prisma.RoutingUrl` and passes `dns` through. It no longer declares a `Prisma.CustomDomain`.
 
 - **A site whose DNS is not ready now deploys** and reports `pending`, where it used to fail. The deploy does not wait for `active`.
-- **`site.domain` is the RoutingUrl.** `records` replaces `dnsRecords`, `status` and `firstUnmetCondition` replace `foundryStatus` and `failureReason`, and `routingUrlId` replaces `customDomainId`.
+- **Breaking: `site.domain` is the RoutingUrl.** `records` replaces `dnsRecords`, `status` and `firstUnmetCondition` replace `foundryStatus` and `failureReason`, and `routingUrlId` replaces `customDomainId`.
 - **Upgrading a deployed site keeps it serving.** The RoutingUrl takes over the row Prisma recorded for the site's custom domain, and `Prisma.CustomDomain`'s delete now skips a row a RoutingUrl has taken over. With `dns`, the site still declares the CNAME alias the released version declared, under its released id, so the upgrade updates that record in place; removing it would delete the CNAME on Cloudflare. It is declared with `adopt(true)`, because the RoutingUrl's record set publishes the same CNAME first, and with `RemovalPolicy.retain()`, so a later release can drop it. Both take the value from one source.
 - **Upgrade first, change the hostname in a later deploy.** Doing both at once creates a new row and deletes the old custom domain, with no check.
 
 ### `Prisma.CustomDomain`
 
-Marked `@deprecated` with the date. Its only other changes: it moves to Distilled's `/v1/services` routes, reads the create's status from Distilled's new `httpStatus`, takes an optional `ownership`, and its delete skips a row taken over by a RoutingUrl. To replace one with a RoutingUrl for the same hostname, do it in one deploy. Nothing else in `packages/prisma/src` uses it.
+Marked `@deprecated` with the date. Its other changes keep it working until the routes go: it moves to Distilled's `/v1/services` routes, reads the create's status from Distilled's new `httpStatus`, takes an optional `ownership` so it can be ordered after a `Prisma.DomainOwnership`, fails with `PrismaDomainOwnershipRequired` (which names the TXT record) when Prisma refuses the hostname for want of proof, and its delete skips a row taken over by a RoutingUrl. To replace one with a RoutingUrl for the same hostname, do it in one deploy. Nothing else in `packages/prisma/src` uses it.
 
 ### `Prisma.DomainOwnership`
 
@@ -88,17 +88,6 @@ Don't declare one for the same exact hostname as a `Prisma.RoutingUrl`: it would
 - The Cloudflare, email, skills and scripts changes that reached #2701 through merges from main are not included.
 
 Depends on the alchemy-run/distilled pull request from `feat/prisma-routing-urls` (the HTTP status on creates and the typed RoutingUrl refusals). `submodules/distilled` must be pinned to a Distilled commit that contains it. The branch currently pins the same Distilled commits rebuilt on the commit Alchemy pins today, because Alchemy does not build against Distilled `main`.
-
-### Tests
-
-All through `stack.deploy` against a fake Management API and an in-memory DNS host whose alias resource reads and deletes like Cloudflare's (`test/Prisma/fixtures/RoutingUrlCloud.ts`):
-
-- `test/Prisma/RoutingUrl.test.ts`: a hostname with no DNS is saved `pending`, a redeploy sends no `PATCH`, destroy deletes only the row; a row found by `logicalId` is updated in place and a row with no `logicalId` is taken over; a hostname change on an `active` row is refused with no `PATCH` when ownership or DNS is absent or unknown, and goes through with a verified domain ownership or the TXT record seen; with `dns`, the first deploy publishes exactly the two records, a redeploy of an `active` row removes nothing, a refused change keeps the old hostname's records (also for two hostnames that differ only in where a dot and a hyphen sit), an accepted change removes them after the `PATCH`, adding `dns` to a deployed row keeps the row, nothing is published in dev, and no domain ownership write is ever sent; one case per typed refusal per operation, answered with the real code and an arbitrary message.
-- `test/Prisma/Website/Domain.test.ts`: a site with `domain` and `dns` saves a RoutingUrl, publishes both records and calls no custom domain route; a site with a plain `domain` deploys `pending`; a site deployed in the released shape, with and without `dns`, upgrades to one row with no `DELETE` sent and its records still published; a custom domain no RoutingUrl took over is still deleted.
-- `test/Prisma/AuthoritativeDns.test.ts`: a unit suite over an in-memory resolver (the pure-utility exception in AGENTS.md).
-- `test/Prisma/DomainOwnership.test.ts` and `test/Prisma/CustomDomain.test.ts`: the proof and adoption rules above, and the 200-on-create race.
-
-Live tests behind `ALCHEMY_RUN_LIVE_PRISMA_TESTS=true` cover a RoutingUrl with no DNS, a hostname change, a site with `dns` on Cloudflare, and the upgrade from the released shape. **None of them has been run**: we have no Prisma or Cloudflare test credentials for this repository. The Cloudflare adoption of the second CNAME and the upgrade are the two places where a live run would tell us most.
 
 Agent: prospero-20
 
