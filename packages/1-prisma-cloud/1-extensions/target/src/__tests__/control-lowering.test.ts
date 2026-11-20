@@ -66,7 +66,6 @@ const recorded: {
   customDomain: Array<[string, unknown]>;
   generated: Array<[string, unknown]>;
   pnMigrate: Array<[string, unknown]>;
-  databaseUrlClaims: string[];
   adoptPolicy: Array<[string, boolean | undefined]>;
   renamePolicy: Array<[string, readonly FormerId[] | undefined]>;
 } = {
@@ -85,7 +84,6 @@ const recorded: {
   customDomain: [],
   generated: [],
   pnMigrate: [],
-  databaseUrlClaims: [],
   adoptPolicy: [],
   renamePolicy: [],
 };
@@ -222,14 +220,6 @@ const realPackageComputeArtifact = RealPrismaAlchemy.packageComputeArtifact;
 mock.module('@internal/lowering', () => ({
   ...RealPrismaAlchemy,
   providers: () => ({ stub: 'providers' }),
-  // Talks to the Management API directly (no Alchemy resource, by design);
-  // stubbed so the application hook runs purely. The projectId it claims for
-  // is recorded — what the claim POSTs is pinned by its own test in
-  // @internal/lowering.
-  claimDatabaseUrlKeys: (projectId: string) => {
-    recorded.databaseUrlClaims.push(projectId);
-    return Effect.void;
-  },
   // A real Alchemy Resource (needs the Stack service); stubbed so
   // application.provision's mint runs purely. The returned "value" is
   // derived from `id` (which itself carries the edge id), so distinct edges
@@ -514,10 +504,9 @@ describe("projectIdOf — narrowing ctx.application to this extension's own prod
 });
 
 describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
-  test('production: references the resolved container project (no Project minted) and claims the DATABASE_URL keys', () => {
+  test('production: references the resolved container project (no Project minted) and declares no environment variable', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const beforeEnv = recorded.envVar.length;
-    const beforeClaims = recorded.databaseUrlClaims.length;
     const container = new PrismaCloudContainer(
       { appName: 'shop', environment: 'production' },
       'shop-project-id',
@@ -539,18 +528,12 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
       defaultBranchId: 'br_default',
       branchless: false,
     });
-    expect(recorded.databaseUrlClaims.slice(beforeClaims)).toEqual(['shop-project-id']);
-    // The claim is a direct Management API create, NOT an alchemy resource:
-    // Composer must never plan a write or a delete for either variable, and a
-    // state row would do exactly that. So no EnvironmentVariable is declared
-    // here — for the DATABASE_URL keys or anything else.
     expect(recorded.envVar.slice(beforeEnv)).toEqual([]);
   });
 
-  test('named environment: claims the same project-level keys, and still declares no environment variable', () => {
+  test('named environment: references the branch, and declares no environment variable', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const beforeEnv = recorded.envVar.length;
-    const beforeClaims = recorded.databaseUrlClaims.length;
     const container = new PrismaCloudContainer(
       { appName: 'shop', environment: 'staging' },
       'shop-project-id',
@@ -571,9 +554,6 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
       defaultBranchId: undefined,
       branchless: false,
     });
-    // The branch id never reaches the claim: the rows are project-level, so
-    // one claim covers every environment of the project.
-    expect(recorded.databaseUrlClaims.slice(beforeClaims)).toEqual(['shop-project-id']);
     expect(recorded.envVar.slice(beforeEnv)).toEqual([]);
   });
 
@@ -2203,6 +2183,64 @@ describe('sharing: one module-provisioned postgres, two compute consumers — th
       value: 'postgres://shop.data.connection',
       class: 'production',
     });
+  });
+});
+
+describe('the platform owns DATABASE_URL — through core lowering()', () => {
+  test('a deploy writes no DATABASE_URL or DATABASE_URL_POOLED variable', async () => {
+    const posts: Array<{ path: string; body: unknown }> = [];
+    const unexpected = (method: string) => (path: string) => {
+      throw new Error(`unexpected ${method} ${path}`);
+    };
+    const managementApi = {
+      POST: (path: string, init: { body?: unknown } = {}) => {
+        posts.push({ path, body: init.body });
+        return Promise.resolve({
+          data: { data: { id: `env-${posts.length}` } },
+          error: undefined,
+          response: new Response(null, { status: 201 }),
+        });
+      },
+      GET: unexpected('GET'),
+      PATCH: unexpected('PATCH'),
+      DELETE: unexpected('DELETE'),
+    } as unknown as RealPrismaAlchemy.ManagementApiClient;
+    const target = prismaCloud({ workspaceId: 'ws_1' });
+    const root = module('shop', {}, ({ provision }) => {
+      const db = provision(rawPostgres({ name: 'data' }), { id: 'data' });
+      provision(
+        compute({
+          name: 'web',
+          deps: { main: rawPostgres() },
+          build: {
+            extension: '@prisma/composer/node',
+            type: 'node',
+            module: 'file:///test/service.ts',
+            entry: 'server.js',
+          },
+        }),
+        { id: 'web', deps: { main: db } },
+      );
+      return {};
+    });
+
+    await runAsync<undefined>(
+      lowering(root, configFor(target), {
+        ...lowerInputs('shop-project#cloud-id'),
+        name: 'shop',
+        bundles: { 'shop.web': { dir: 'modules/web/dist/bundle', entry: 'server.js' } },
+      }).pipe(Effect.provideService(RealPrismaAlchemy.ManagementClient, managementApi)),
+    );
+
+    const databaseUrlWrites = posts.filter(
+      ({ path, body }) =>
+        path === '/v1/environment-variables' &&
+        typeof body === 'object' &&
+        body !== null &&
+        'key' in body &&
+        (body.key === 'DATABASE_URL' || body.key === 'DATABASE_URL_POOLED'),
+    );
+    expect(databaseUrlWrites).toEqual([]);
   });
 });
 

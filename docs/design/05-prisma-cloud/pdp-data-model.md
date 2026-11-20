@@ -104,10 +104,9 @@ Consequences Prisma Composer designs around:
 3. **`DATABASE_URL` is not a separate mechanism.** It is a platform-written
    template flowing through the same materialization as user variables — a
    convenience for hand-provisioned single services. The platform owns it
-   (system-managed), and Prisma Composer refuses to bind or manage the name —
-   though on a fresh Project it claims the keys once, create-only, with an
-   inert placeholder so the platform's self-heal cannot seed live credentials
-   (see
+   (system-managed) and writes it only for a project's default database.
+   Prisma Composer refuses to bind or manage the name and creates no default
+   database (see
    [alchemy-lowering.md](alchemy-lowering.md#database_url-is-forbidden--and-left-to-the-platform));
    every database URL a service consumes is an explicit, service-named variable.
 4. **Branch + class is the platform's environments model** (production
