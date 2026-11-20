@@ -78,7 +78,7 @@ async function artifactSha256(artifactPath: string): Promise<string> {
 const COMPOSER_NAMESPACE_PREFIX = 'COMPOSER_';
 
 /**
- * Scopes `env.json` to what THIS service may see: rows it owns
+ * Scopes `env.json` to what THIS dev server may see: rows it owns
  * (`COMPOSER_<its address>_*`) plus every unprefixed (platform-owned,
  * app-wide) row. Materializing the app-wide set locally causes spurious
  * restarts — an early service's snapshot "completes" on the second converge
@@ -169,23 +169,38 @@ export function readComputeManifest(artifactDir: string): {
   return { address: parsed.address, listens: parsed.listens !== false };
 }
 
-/**
- * A deployment's environment: its own rows, its port, the platform variables its input document names, and `PATH` and `HOME`.
- * For a service that runs its `artifact`, the `env.json` input entry is stale and left out, and the
- * platform variables come from the artifact's `inputDocument`. A dev server has no `artifact` and is
- * given the same otherwise (ADR-0056).
- */
-export async function materializeEnv(
+/** A deployment's own `COMPOSER_` keys, from its `variables` prop. A key sent as `null` is left out, so the service reads it as never provided. */
+export function deploymentRows(
+  variables: Readonly<Record<string, Redacted.Redacted<string> | null>> | undefined,
+): Record<string, string> {
+  const rows: Record<string, string> = {};
+  for (const [key, value] of Object.entries(variables ?? {})) {
+    if (value !== null) rows[key] = Redacted.value(value);
+  }
+  return rows;
+}
+
+/** A dev server's own rows, which `reserve` wrote to `env.json` (ADR-0056). */
+export async function devServerRows(
   devDir: string,
+  address: string,
+): Promise<Record<string, string>> {
+  return scopedEnvRows(await envStore(devDir).read(), address);
+}
+
+/**
+ * A service's environment: its own rows, its port, the platform variables its input document names, and `PATH` and `HOME`.
+ * For a service that runs its `artifact`, the platform variables come from the artifact's
+ * `inputDocument`; for a dev server, from the input document among its rows (ADR-0056).
+ */
+export function materializeEnv(
+  rows: Readonly<Record<string, string>>,
   address: string,
   port: number,
   configuration: Readonly<Record<string, unknown>>,
   secrets: Readonly<Record<string, string>>,
   artifact?: { readonly inputDocument?: unknown },
-): Promise<Record<string, string>> {
-  const rows = scopedEnvRows(await envStore(devDir).read(), address);
-  const inputKey = composerKey(address, INPUT_KEY_NAME);
-  if (artifact !== undefined) delete rows[inputKey];
+): Record<string, string> {
   const env: Record<string, string> = { ...rows };
   env[composerKey(address, 'PORT')] = JSON.stringify(port);
   const named =
@@ -311,9 +326,9 @@ export function LocalEnvironmentVariableProvider(
 /**
  * `Prisma.Deployment` → unpacks the artifact once per hash, finds the
  * service's emulator instance and its port, builds the child's env with
- * `materializeEnv` from the input document the artifact carries, and puts the
- * deployment — the
- * emulator (re)starts the child only when the hash or env actually changed.
+ * `materializeEnv` from the deployment's `variables` and the input document
+ * the artifact carries, and puts the deployment — the emulator (re)starts the
+ * child only when the hash or env actually changed.
  * `portMapping` is ignored on purpose: the emulator owns port allocation, and
  * the child learns its port from `COMPOSER_<ADDRESS>_PORT` in the env this
  * provider materializes.
@@ -339,8 +354,8 @@ export function LocalDeploymentProvider(
           const { address, listens } = readComputeManifest(artifactDir);
 
           const { instance } = await ensureServiceInstance(appScopeOf(input), appId);
-          const env = await materializeEnv(
-            input.devDir,
+          const env = materializeEnv(
+            deploymentRows(news.variables),
             address,
             instance.port,
             input.plainVariableText,
