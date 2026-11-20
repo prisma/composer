@@ -49,23 +49,11 @@ never the container itself (see
 
 ## `DATABASE_URL` is forbidden — and left to the platform
 
-The platform writes `DATABASE_URL` / `DATABASE_URL_POOLED` templates pointing at
-a project's default database — a convenience for hand-provisioned single
-services, and precisely the kind of **implicit ambient config the framework
-exists to eliminate**. The framework never reads it and never depends on it.
-Framework-provisioned Projects are created with `createDatabase: false`, so no
-default database exists on them — but that alone does not keep the variable
-away: the platform self-heals a missing `DATABASE_URL` template on the first
-Compute deploy, wiring it from any ready database on the Project (default
-first, then oldest) — on a Composer Project, one of the app's own databases.
+The platform writes `DATABASE_URL` and `DATABASE_URL_POOLED` pointing at a project's default database, and marks them system-managed. It does so only when a project is created with a database, or when a database is created as the project's default. That is a convenience for hand-provisioned single services, and exactly the kind of implicit ambient config the framework exists to eliminate. The framework never reads either variable and never depends on it.
 
-So the framework claims the keys first. `application.provision` writes `DATABASE_URL` and `DATABASE_URL_POOLED` (production and preview class, project-level) with the placeholder value `"-"` via create-only calls (`lowering/src/database-url-claim.ts`). The platform's writes are also create-only, so whoever writes first wins permanently: on a fresh Project the claim lands first and the self-heal never fires; on a Project whose variables the platform already seeded, the claim gets a 409 and no-ops. The rows are plain variables on the platform, never Alchemy resources — nothing enters deploy state and upstream's `EnvironmentVariable` never owns them. Alongside the claim, the authoring-side ban holds: `variable()` and `variable.secret()` reject both names (`variable-name.ts`), so no platform variable the app declares can carry one. Every database URL a service actually consumes is an explicit, per-service variable the pack's `serialize` writes under its own named key, inside the `COMPOSER_` namespace.
+Framework-provisioned Projects are created with `createDatabase: false`, and the framework never creates a project default database, so on a Composer Project the platform writes neither variable. The framework writes no row of its own under either name, and nothing about them enters deploy state. The authoring-side ban remains: `variable()` and `variable.secret()` reject both names (`variable-name.ts`), so no platform variable the app declares can carry one. Every database URL a service actually consumes is an explicit, per-service variable the pack's `serialize` writes under its own named key, inside the `COMPOSER_` namespace.
 
-A service that reads `process.env.DATABASE_URL` behind the framework's back
-therefore reads the placeholder `"-"` and fails loudly — or, on a Project the
-platform seeded before the framework ever deployed to it, the platform's own
-template ([deploying.md](../../guides/deploying.md) covers the leftover rows
-and manual cleanup).
+A service that reads `process.env.DATABASE_URL` behind the framework's back sees whatever is on the platform under that name: nothing on a Composer Project, the platform's own value on a Project created outside Composer with a default database, or a value the user set. Older framework versions wrote the placeholder `"-"` under both names; those rows stay on existing Projects until the user deletes them ([deploying.md](../../guides/deploying.md) covers them).
 
 ## The resource inventory
 

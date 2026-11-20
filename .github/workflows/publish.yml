@@ -108,6 +108,11 @@ jobs:
       - name: Check the family and testing static graphs
         run: pnpm check:family-static-graph
 
+      # Every source map the build wrote names our TypeScript, and auth/testing
+      # carries no copy of the Prisma ORM.
+      - name: Check the published source maps
+        run: pnpm check:published-source-maps
+
       # npm-tree survival — a real `npm install` of the packed tarballs
       # resolves one pinned effect, and the CLI starts (and fails loudly in an
       # adversarial tree).

@@ -283,6 +283,10 @@ jobs:
       # standalone npm install does.
       - name: Check npm resolves a single pinned effect
         run: pnpm check:npm-effect-resolution
+      # Same built packages: every published map names our TypeScript, and
+      # auth/testing carries no copy of the Prisma ORM. See the script's header.
+      - name: Check the published source maps
+        run: pnpm check:published-source-maps
 
   cli-engine-pin:
     name: cli-engine pin and externality

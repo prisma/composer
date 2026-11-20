@@ -1,5 +1,6 @@
 import * as Prisma from '@alchemy.run/prisma';
 import { Credentials } from '@distilled.cloud/prisma';
+import type { CallerCredentials } from '@internal/core/config';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
@@ -74,14 +75,10 @@ const upstreamPrismaProviders = (baseUrl: string, clientSupplied: boolean) =>
     Layer.provideMerge(operationCredentials(baseUrl)),
   );
 
-/**
- * The Prisma provider bundle. Without `options.client` it builds its own client from
- * `PRISMA_SERVICE_TOKEN`. With one, it throws `DEPLOY.MANAGEMENT_API_URL_CONFLICT` when
- * `PRISMA_API_URL` names another host.
- */
-export const providers = (options?: { readonly client?: ManagementApiClient | undefined }) => {
+/** Throws `DEPLOY.MANAGEMENT_API_URL_CONFLICT` when the caller supplies a client and `PRISMA_API_URL` names another host. */
+export const providers = (credentials?: Pick<CallerCredentials<ManagementApiClient>, 'client'>) => {
   const suppliedOrigin =
-    options?.client === undefined ? undefined : suppliedClientOrigin(process.env);
+    credentials?.client === undefined ? undefined : suppliedClientOrigin(process.env);
   return Layer.unwrap(
     Effect.map(
       suppliedOrigin === undefined ? tokenClientOrigin() : Effect.succeed(suppliedOrigin),
@@ -100,9 +97,9 @@ export const providers = (options?: { readonly client?: ManagementApiClient | un
             Prisma.CustomDomain,
           ]),
         ).pipe(
-          Layer.provideMerge(upstreamPrismaProviders(origin, options?.client !== undefined)),
+          Layer.provideMerge(upstreamPrismaProviders(origin, credentials?.client !== undefined)),
           Layer.provideMerge(managementApiHttpLayer(origin)),
-          Layer.provideMerge(client.suppliedOrFromEnv(options?.client, origin)),
+          Layer.provideMerge(client.suppliedOrFromEnv(credentials, origin)),
         ),
     ),
   ).pipe(Layer.orDie);

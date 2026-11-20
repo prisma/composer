@@ -541,7 +541,7 @@ describe('providers({ client }) and the host settings', () => {
 
     for (const error of [
       thrownBy(() => providers({ client })),
-      thrownBy(() => prismaStateLayer({ projectId: 'proj_1' }, client)),
+      thrownBy(() => prismaStateLayer({ projectId: 'proj_1' }, { client })),
     ]) {
       expect(CliStructuredError.is(error)).toBe(true);
       expect(CliStructuredError.is(error) && error.code).toBe('DEPLOY.MANAGEMENT_API_URL_CONFLICT');

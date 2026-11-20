@@ -7,6 +7,7 @@ import type {
 } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import {
+  composerClientOf,
   drivePagesAsync,
   fromEnv,
   type ManagementApiClient,
@@ -302,7 +303,7 @@ export async function runPreflight(
     return { updatedAt: new Map() };
   }
 
-  const client = input.credentials?.client ?? deps?.client ?? (await managementClient());
+  const client = composerClientOf(input.credentials) ?? deps?.client ?? (await managementClient());
   const pending = await pendingEnvKeyClashes(client, projectId, branchId, clashes);
   if (pending.length > 0) throw envKeyClashError(pending, projectId, branchId, input.environment);
 

@@ -1,4 +1,30 @@
-import type { UserConfig } from 'tsdown';
+import type { Rolldown, UserConfig } from 'tsdown';
+
+// Rolldown does not read a built input's own source map, so bundling another workspace
+// package's dist would name that dist as the source. Loading the map lets rolldown compose it.
+export const carryIncomingSourceMaps: Rolldown.Plugin = {
+  name: 'carry-incoming-source-maps',
+  load: {
+    filter: {
+      id: { include: /\.(?:m?js|d\.m?ts)$/, exclude: [/^\0/, /[\\/]node_modules[\\/]/] },
+    },
+    async handler(id) {
+      const code = await this.fs.readFile(id, { encoding: 'utf8' }).catch(() => null);
+      if (code === null) return null;
+      const mapUrl = /\/\/# sourceMappingURL=(\S+)\s*$/.exec(code)?.[1];
+      if (mapUrl === undefined || !isPlainRelativePath(mapUrl)) return null;
+      const directory = id.slice(0, Math.max(id.lastIndexOf('/'), id.lastIndexOf('\\')) + 1);
+      return {
+        code,
+        map: await this.fs.readFile(directory + decodeURI(mapUrl), { encoding: 'utf8' }),
+      };
+    },
+  },
+};
+
+function isPlainRelativePath(url: string): boolean {
+  return !/^(?:[a-z][a-z0-9+.-]*:|[\\/])/i.test(url);
+}
 
 /**
  * Base `tsdown` configuration for the workspace. Mirrors prisma/orm's
@@ -56,6 +82,7 @@ export const baseConfig: UserConfig = {
     exclude: [/^bin$/],
   },
   outExtensions: () => ({ js: '.mjs', dts: '.d.mts' }),
+  plugins: [carryIncomingSourceMaps],
   skipNodeModulesBundle: true,
   sourcemap: true,
 };
