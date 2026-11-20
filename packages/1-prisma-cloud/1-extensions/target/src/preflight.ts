@@ -7,12 +7,12 @@ import type {
 } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import {
+  composerClientOf,
   drivePagesAsync,
   fromEnv,
   type ManagementApiClient,
   ManagementClient,
   managementClientLayer,
-  withDeploySourceHeaders,
 } from '@internal/lowering';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
@@ -303,11 +303,7 @@ export async function runPreflight(
     return { updatedAt: new Map() };
   }
 
-  const supplied = input.credentials?.client;
-  const client =
-    supplied !== undefined
-      ? withDeploySourceHeaders(supplied)
-      : (deps?.client ?? (await managementClient()));
+  const client = composerClientOf(input.credentials) ?? deps?.client ?? (await managementClient());
   const pending = await pendingEnvKeyClashes(client, projectId, branchId, clashes);
   if (pending.length > 0) throw envKeyClashError(pending, projectId, branchId, input.environment);
 

@@ -102,7 +102,7 @@ export const providers = (options?: { readonly client?: ManagementApiClient | un
         ).pipe(
           Layer.provideMerge(upstreamPrismaProviders(origin, options?.client !== undefined)),
           Layer.provideMerge(managementApiHttpLayer(origin)),
-          Layer.provideMerge(client.suppliedOrFromEnv(options?.client, origin)),
+          Layer.provideMerge(client.suppliedOrFromEnv(options, origin)),
         ),
     ),
   ).pipe(Layer.orDie);

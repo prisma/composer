@@ -184,7 +184,7 @@ export const prismaState = (): StateDescriptor => ({
         ...(branchId !== undefined ? { branchId } : {}),
         ...(defaultBranchId !== undefined ? { defaultBranchId } : {}),
       },
-      credentials?.client,
+      credentials,
     );
   },
 });
@@ -344,7 +344,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     providers: ({ credentials }: ProvidersInput<Prisma.ManagementApiClient>) =>
       asProvidersLayer(
         Layer.mergeAll(
-          Prisma.providers({ client: credentials?.client }),
+          Prisma.providers(credentials),
           PgWarmProvider(),
           OrmMigrationProvider(),
           S3CredentialsProvider(),

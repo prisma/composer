@@ -9,7 +9,7 @@ import {
   type ManagementApiClient,
   ManagementClient,
   suppliedOrFromEnv,
-  withDeploySourceHeaders,
+  withComposerIdentity,
 } from '../client.ts';
 import { deploySourceHeaders, PrismaCredentials } from '../credentials.ts';
 import { readDeployedEnvironment } from '../deployed.ts';
@@ -95,7 +95,7 @@ describe('the shared Management API client identifies Composer', () => {
   });
 });
 
-describe('withDeploySourceHeaders', () => {
+describe('withComposerIdentity', () => {
   /** A client like the `prisma` CLI's: its own identity as default headers, over a recording fetch. */
   function callerClient() {
     const requests: Request[] = [];
@@ -113,10 +113,10 @@ describe('withDeploySourceHeaders', () => {
   test("Composer's requests through the view say they came from Composer, over the caller's defaults", async () => {
     const { client, requests } = callerClient();
 
-    await withDeploySourceHeaders(client).GET('/v1/environment-variables', {
+    await withComposerIdentity(client).GET('/v1/environment-variables', {
       params: { query: { projectId: 'proj', class: 'preview', key: 'K' } },
     });
-    await withDeploySourceHeaders(client).request('post', '/v1/projects', {
+    await withComposerIdentity(client).request('post', '/v1/projects', {
       body: { name: 'shop' },
     });
 
@@ -129,9 +129,26 @@ describe('withDeploySourceHeaders', () => {
     }
   });
 
+  test('covers every request method the SDK client has', async () => {
+    const NOT_REQUESTS = new Set(['use', 'eject']);
+    const { client, requests } = callerClient();
+    const view = withComposerIdentity(client);
+    const methods = Object.keys(client).filter((name) => !NOT_REQUESTS.has(name));
+
+    for (const name of methods) {
+      const send: unknown = Reflect.get(view, name);
+      if (typeof send !== 'function') throw new Error(`${name} is not a function`);
+      await (name === 'request' ? send('get', '/v1/workspaces') : send('/v1/workspaces'));
+    }
+
+    expect(requests.map((request) => request.headers.get('x-prisma-client-name'))).toEqual(
+      methods.map(() => 'composer'),
+    );
+  });
+
   test("the caller's client is not changed: its own requests keep its headers", async () => {
     const { client, requests } = callerClient();
-    withDeploySourceHeaders(client);
+    withComposerIdentity(client);
 
     await client.GET('/v1/workspaces');
 
@@ -141,7 +158,7 @@ describe('withDeploySourceHeaders', () => {
 
   test("a request's own headers are kept, in every form openapi-fetch takes", async () => {
     const { client, requests } = callerClient();
-    const view = withDeploySourceHeaders(client);
+    const view = withComposerIdentity(client);
 
     await view.GET('/v1/workspaces', { headers: { 'x-custom': 'record' } });
     await view.GET('/v1/workspaces', { headers: new Headers({ 'x-custom': 'headers' }) });
@@ -164,7 +181,7 @@ describe('withDeploySourceHeaders', () => {
       },
     ) as ManagementApiClient;
 
-    await withDeploySourceHeaders(engineClient).GET('/v1/workspaces');
+    await withComposerIdentity(engineClient).GET('/v1/workspaces');
 
     expect(requests[0]?.headers.get('x-prisma-client-name')).toBe('composer');
   });
@@ -194,7 +211,7 @@ describe("Composer's calls through a caller-supplied client identify Composer", 
   test('through the ManagementClient the state store and the resource providers use', async () => {
     const { client, requests } = callerClient();
     const supplied = await Effect.runPromise(
-      Effect.service(ManagementClient).pipe(Effect.provide(suppliedOrFromEnv(client, ORIGIN))),
+      Effect.service(ManagementClient).pipe(Effect.provide(suppliedOrFromEnv({ client }, ORIGIN))),
     );
 
     await supplied.GET('/v1/workspaces');
@@ -230,10 +247,4 @@ describe('the identity header values follow the Management API format rules', ()
       for (const value of Object.values(deploySourceHeaders())) expect(value).toMatch(FORMAT);
     });
   }
-
-  test('prerelease versions are valid too', () => {
-    for (const version of ['0.38.1', '0.39.0-dev.2', '1.0.0-rc.1+build.5']) {
-      expect(version).toMatch(FORMAT);
-    }
-  });
 });

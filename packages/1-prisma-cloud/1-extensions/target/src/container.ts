@@ -14,6 +14,7 @@ import type {
   LocateContainerInput,
 } from '@internal/core/config';
 import {
+  composerClientOf,
   deleteBranch,
   deleteProject,
   fromEnv,
@@ -24,7 +25,6 @@ import {
   type ProjectRegion,
   resolveContainer,
   suppliedClientOrigin,
-  withDeploySourceHeaders,
 } from '@internal/lowering';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
@@ -195,8 +195,7 @@ function clientFor(
   credentials: PrismaCloudCredentials | undefined,
   deps: ContainerDeps | undefined,
 ): ManagementApiClient | undefined {
-  const supplied = credentials?.client;
-  return supplied !== undefined ? withDeploySourceHeaders(supplied) : deps?.client;
+  return composerClientOf(credentials) ?? deps?.client;
 }
 
 /** Runs against the injected client when there is one, and against an env-built one otherwise. */

@@ -1,6 +1,6 @@
 import * as Effect from 'effect/Effect';
 import type { ApplicationTopologyNodeBody } from './builds/application-topology.ts';
-import { type ManagementApiClient, ManagementClient, withDeploySourceHeaders } from './client.ts';
+import { type ManagementApiClient, ManagementClient, withComposerIdentity } from './client.ts';
 import { resolveContainer } from './container.ts';
 import { call, callOptional } from './http.ts';
 import { collectPages } from './pagination.ts';
@@ -118,7 +118,7 @@ export async function readDeployedEnvironment(
       Effect.catchTag('PrismaApiError', (error) =>
         Effect.fail(new Error(`Prisma Management API error: ${error.message}.`)),
       ),
-      Effect.provideService(ManagementClient, withDeploySourceHeaders(client)),
+      Effect.provideService(ManagementClient, withComposerIdentity(client)),
     ),
   );
 }

@@ -9,10 +9,11 @@
  * stays here is Composer's own: the artifact packager and `ServiceKey`.
  */
 export {
+  composerClientOf,
   layer as managementClientLayer,
   type ManagementApiClient,
   ManagementClient,
-  withDeploySourceHeaders,
+  withComposerIdentity,
 } from '../client.ts';
 export * from '../container.ts';
 export * from '../credentials.ts';
