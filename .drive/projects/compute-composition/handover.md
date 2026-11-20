@@ -69,6 +69,8 @@ D. **An unchanged deploy creates no new version.** Today, on Composer's main, a 
 3. When piece A is merged and released: bring the piece B branch up to date with Composer's main, remove the three `pnpm.overrides` that point at local tarballs (they are in `wip/alchemy-tarballs/` of the worktree `compute-keep-versions` and are not checked in), set the catalog in `pnpm-workspace.yaml` to the released Alchemy version, and open the Composer pull request. The version bump and the Composer change must land in one pull request, because Composer names `Prisma.App` and `Prisma.Deployment`, which the new Alchemy version removes.
 4. Piece D, if Will says to start it.
 
+To build or test the piece B branch before the Alchemy release, copy the three tarballs from `/Users/will/Projects/prisma/composer/.claude/worktrees/compute-keep-versions/wip/alchemy-tarballs/` into your worktree's `wip/alchemy-tarballs/`. They were built from an older commit of the Alchemy branch (`91602bc38`), so rebuild them from the current head before trusting a test result.
+
 ## Rules that caused trouble in this project
 
 - **Pushing and identity.** Act as the bot `wmadden-electric`. Push only through the remote named `bot`. Commit with `git commit -s --trailer "Signed-off-by: Will Madden <madden@prisma.io>"`. Never add a co-author line. The bot cannot open or edit pull requests on `alchemy-run`; Will does that from his own terminal, and the app's Run button uses the bot's shell, so a `gh pr edit` there fails.
