@@ -16,6 +16,7 @@ import { type LocalAuthServer, startLocalAuthServer } from '../execution/testing
 import { authTemplates } from '../templates.ts';
 import {
   createTestDatabase,
+  SCHEMA_BOOTSTRAP_TIMEOUT_MS,
   startTestPostgres,
   type TestDatabase,
   type TestPostgres,
@@ -57,7 +58,7 @@ describe.skipIf(pgServer === undefined)(
       const email = await emailSender(authTemplates).connection.hydrate({ url: mailServer.url });
       auth = await startLocalAuthServer({ databaseUrl: db.url, email });
       outbox = makeClient(emailOutboxContract, mailServer.url);
-    });
+    }, SCHEMA_BOOTSTRAP_TIMEOUT_MS);
     afterAll(async () => {
       await auth?.stop();
       await mailServer?.stop();
