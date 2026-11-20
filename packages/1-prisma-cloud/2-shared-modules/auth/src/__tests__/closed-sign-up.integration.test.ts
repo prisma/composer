@@ -14,6 +14,7 @@ import type { LocalAuthServer } from '../execution/testing.ts';
 import { startLocalAuthServer } from '../execution/testing.ts';
 import {
   createTestDatabase,
+  SCHEMA_BOOTSTRAP_TIMEOUT_MS,
   startTestPostgres,
   type TestDatabase,
   type TestPostgres,
@@ -53,7 +54,7 @@ describe.skipIf(pgServer === undefined)("startLocalAuthServer — signUp: 'close
   beforeAll(async () => {
     db = await createTestDatabase(pgServer.url);
     server = await startLocalAuthServer({ databaseUrl: db.url, signUp: 'closed' });
-  });
+  }, SCHEMA_BOOTSTRAP_TIMEOUT_MS);
   afterAll(async () => {
     await server?.stop();
     await db?.drop().catch(() => {});

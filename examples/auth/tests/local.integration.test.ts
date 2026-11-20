@@ -27,6 +27,7 @@ import apiService from '../src/api/service.ts';
 import opsService from '../src/ops/service.ts';
 import {
   createTestDatabase,
+  SCHEMA_BOOTSTRAP_TIMEOUT_MS,
   startTestPostgres,
   type TestDatabase,
   type TestPostgres,
@@ -82,7 +83,7 @@ describe.skipIf(pgServer === undefined)('the example wiring against startLocalAu
       service: { port: OPS_PORT },
       inputs: { admin: { url: auth.url }, outbox: { url: mailServer.url } },
     });
-  });
+  }, SCHEMA_BOOTSTRAP_TIMEOUT_MS);
   afterAll(async () => {
     await auth?.stop();
     await mailServer?.stop();
