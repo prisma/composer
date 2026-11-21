@@ -76,3 +76,7 @@ Two more dispatches on the same Alchemy branch, each reviewed with `drive-code-r
 ## D6: wait for `active` with `dns`, and report the certificate limit (2026-11-20)
 
 One implementer dispatch on the Alchemy branch, then both passes of the code review, then fixes, then push and description update. See the spec section "Waiting for the hostname, and Prisma's certificate limit". Open point for the implementer to settle from the control plane code: how a failed certificate and the hourly limit show in the API response without reading message text. If only the text shows it, quote `customDomainSyncError` in the error and record that the platform needs a code.
+
+### Platform request from D6: a structured signal for the hourly certificate limit
+
+The resource recognises the hourly certificate limit by matching the exact sentence the control plane writes into `customDomainSyncError` (`certificateSlotWaitMessage` in `routingUrlConditions.ts`). A reworded sentence turns the clear error into a timeout that quotes the text. Wanted: a field on the RoutingUrl response such as `certificateLimit: { limit, resetAt } | null`, or a `state` value for it. No date; the match works until the wording changes.
