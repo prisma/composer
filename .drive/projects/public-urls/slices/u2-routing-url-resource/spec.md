@@ -76,3 +76,24 @@ Deliberately out:
 - A `Prisma.Website` state written by the released Alchemy redeploys with one row for the hostname left on the platform and its DNS records still published, and a test proves no delete was sent for that row.
 - No source file in `packages/prisma/src` other than `CustomDomain.ts` and the exports refers to `Prisma.CustomDomain`.
 - Released in an Alchemy version Composer can depend on.
+
+## Waiting for the hostname, and Prisma's certificate limit (added 2026-11-20)
+
+Will, relayed by the session coordinating the control plane's hostname routes: handling Prisma's rate limits and waits is the resource's job, not something Alchemy's team does in its test setup. "this is something that either WE do in our Alchemy PRs or nobody does. we are not telling their team to do it." What went wrong: the live DNS tests looped on `POST /v1/urls/{id}/check` every 10 seconds while a certificate order hung in Foundry. Each check on a failed certificate orders a new one, and a workspace may order 10 an hour.
+
+Facts from the control plane (`packages/interactors/src/compute/syncRoutingUrl.ts`, `routingUrl.ts`, `domainCreationRateLimit.ts`):
+
+- A certificate normally takes about 20 seconds. After it is issued the control plane rechecks only every 180 seconds, so `active` can lag by 3 minutes. `POST /v1/urls/{id}/check` syncs at once and costs nothing while the certificate is being issued.
+- 10 new certificates per workspace per hour. Every new RoutingUrl counts, and so does each `/check` on a failed certificate. At the limit, creating a RoutingUrl still succeeds; it stays `pending` and `customDomainSyncError` reads "The workspace has reached its hourly limit of 10 new certificates. The limit resets at <ISO time>." The control plane continues on its own at that time. `/check` answers `429` with `Retry-After` when the certificate has failed and the limit is used.
+
+Decisions:
+
+- With `dns`, the deploy waits for the hostname to become `active`, because the resource published the records and nothing else is needed. Without `dns` it still returns `pending` at once: a person has to publish the records, and deploying before DNS exists is the point of the resource.
+- The wait has a fixed limit long enough for a normal certificate plus the 180-second recheck. When it runs out the deploy fails with a typed error that names the first unmet condition and quotes `customDomainSyncError`.
+- When Prisma reports the hourly certificate limit, the deploy fails with an error that says so and when the limit resets, and says that Prisma continues on its own and a redeploy after that time picks the hostname up.
+- A failed wait never creates the RoutingUrl again: the next deploy finds the saved row. The resource calls `/check` only where the control plane code shows it cannot order a certificate, and never in a loop on a failed certificate.
+- Every call obeys `429` and `Retry-After`.
+- The live tests stop calling `/check` in a loop; they read `active` from the deploy.
+- The docs say what Will is telling Alchemy's team: a workspace can add about 10 custom hostnames an hour; every RoutingUrl a test creates counts, also one created again after deletion; count CI reruns and parallel jobs.
+
+Done when: the above is built and covered by tests, the docs and the pull request description say it, and the Prisma test files, `tsrs -b`, format and lint pass.
