@@ -97,3 +97,12 @@ Decisions:
 - The docs say what Will is telling Alchemy's team: a workspace can add about 10 custom hostnames an hour; every RoutingUrl a test creates counts, also one created again after deletion; count CI reruns and parallel jobs.
 
 Done when: the above is built and covered by tests, the docs and the pull request description say it, and the Prisma test files, `tsrs -b`, format and lint pass.
+
+Decisions added after the eighth and ninth reviews (2026-11-21):
+
+- Prisma looks at a hostname's DNS only when the RoutingUrl is written or checked, never when it is read. So with `dns` the resource first sees both records at the authoritative nameservers. If one is still absent it fails before it writes anything (`RoutingUrlRecordsNotSeen`), which also avoids spending one of the hourly certificate orders on a hostname that does not point at Prisma yet.
+- The resource calls `/check` at most once per deploy, with no resend, and only when the row has no custom domain and Prisma's `state` is `not_verified` or `waiting_for_dns`. In that case the call cannot retry a certificate, because none exists.
+- The wait ends at once, with the reason, when waiting cannot help: a failed certificate (read from the custom domain's status, because `state` shows `certificate_failed` only when no earlier state applies), a hostname in use by another RoutingUrl (`state` is `in_use_elsewhere`), or the hourly limit. A failed certificate is retried by a person, in the Console or with one check call; the resource never retries it.
+- The wait runs when the resource has no stored output, when the hostname changed, or when `dns` was just added. A hostname that served and later stops does not fail later deploys.
+- A create whose reply was lost is refused when resent. The resource then lists the Branch's RoutingUrls again and continues with its own: same service, `logicalId` and hostname.
+- The resource reports Prisma's `state` next to `status`. `status` records that the hostname went live; `state` says what it is doing now.
