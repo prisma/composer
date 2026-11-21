@@ -67,7 +67,7 @@ Upgrade with the same `domain` first, and change the hostname in a later deploy.
 
 Until the routes go it keeps working: it now fails with `PrismaDomainOwnershipRequired`, which names the TXT record, when Prisma refuses a hostname for want of proof.
 
-`Prisma.DomainOwnership` proves a wildcard once, for many hostnames:
+`Prisma.DomainOwnership` is the resource for a domain ownership: Prisma's record that a workspace has proved it owns a domain, which is an exact hostname or a wildcard. A hostname serves only once a verified domain ownership covers it. Prisma creates the one for a RoutingUrl's exact hostname itself; this resource declares one directly, for example a wildcard that covers every hostname under it:
 
 ```ts
 yield* Prisma.DomainOwnership("example.com", {
