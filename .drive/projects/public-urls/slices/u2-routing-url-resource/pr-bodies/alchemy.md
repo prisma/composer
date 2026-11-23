@@ -13,7 +13,7 @@ const url = yield* Prisma.RoutingUrl("api", {
 
 Without `dns` the deploy succeeds at once with `status: "pending"`, and `url.records` lists the records to publish by hand.
 
-**Why now:** Prisma has deprecated its custom domain routes (`/v1/services/{id}/domains`, `/v1/domains/{id}`) and deletes them about 2026-12-21. A RoutingUrl is their replacement in Prisma's API. `Prisma.CustomDomain` and every `Prisma.Website` with a `domain` call the old routes today.
+**Why now:** Prisma has deprecated its custom domain routes (`/v1/services/{id}/domains`, `/v1/domains/{id}`) and removes them on 2026-12-23 (`x-sunset` in its published spec). A RoutingUrl is their replacement in Prisma's API. `Prisma.CustomDomain` and every `Prisma.Website` with a `domain` call the old routes today.
 
 ### How a RoutingUrl works
 
