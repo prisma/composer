@@ -237,7 +237,7 @@ dependencies are traced and copied into the deploy artifact (see
 Inside `plan and apply`, each resource the deploy engine creates, updates or deletes is a step of its own, such as `▸ creating storefront-auth.web` and `✔ created storefront-auth.web (12.0s)`, and the engine's log lines print between them.
 The last line is the whole deploy, from start to finish.
 
-With `--json`, each step is a `step-started` and a `step-finished` line on stdout, followed by an `endpoint` line per public URL and the `result` line. A `step-finished` line carries `data.durationMs`. An assemble step's `data` also holds whatever the service's build adapter reports, and the `check environment variables` step's `data` holds `checked` and `unset`, how many platform variables it checked and how many have no value. When some have no value and no service needs them, a `message` line follows the step, whose `data.unset` lists each one with its readers and commands ([Platform variables](#platform-variables)). The build adapter's fields vary by adapter, so read them as information, not as a stable format. The `result` line has the deploy's total `durationMs` beside `summary`, whose `findings.unset` lists the platform variables with no value again.
+With `--json`, each step is a `step-started` and a `step-finished` line on stdout, followed by an `endpoint` line per public URL and the `result` line. A `step-finished` line carries `data.durationMs`. An assemble step's `data` also holds whatever the service's build adapter reports, and the `check environment variables` step's `data` holds `checked` and `unset`, how many platform variables it checked and how many have no value. When some have no value and no service needs them, a `message` line follows the step, whose `data.unset` lists each one with its readers and how to set it: a shell command, or for a custom group an instruction ([Platform variables](#platform-variables)). The build adapter's fields vary by adapter, so read them as information, not as a stable format. The `result` line has the deploy's total `durationMs` beside `summary`, whose `findings.unset` lists the platform variables with no value again.
 
 A deploy ends by printing your app's own topology — the names you authored,
 what each one became on the platform, and the public URLs:
@@ -285,24 +285,24 @@ export default appRoot('shop', ({ provision }) => {
 
 You set its value on the platform as text. A variable declared with a `schema`, such as `variable({ name: 'SMTP_PORT', schema: type('number') })`, is decoded and validated when the service boots, not when you deploy: a text that does not fit fails the service at boot, the deploy still succeeds, and the error is in `prisma service logs <service>` ([Building an app § A typed platform variable](building-an-app.md#a-typed-platform-variable)). The node creates nothing: the deploy report has no line for it. The deploy does not copy a value from `.env` or your shell to the platform, because that could push a local value into a remote environment by accident, and today it creates, changes and deletes no platform variable.
 
-Set a variable with the `prisma` CLI, at one of three scopes:
+Prisma Cloud keeps variables in **variable groups**. Every project has a `production` group and a `preview` group, and can have custom groups, each matching branches by their git name. Each branch receives exactly one group: the production branch receives `production`, any other branch receives the custom group whose rule matches its name most precisely, or else `preview`. Groups do not combine: a branch that receives a custom group named `staging` receives nothing from `preview`. Set a value in the group the environment's branch receives:
 
 ```sh
 # production
 prisma project env add 'EMAIL_API_KEY=<value>' --project '<project id>' --role production
-# every preview environment
+# every preview environment that receives the preview group
 prisma project env add 'EMAIL_API_KEY=<value>' --project '<project id>' --role preview
-# one preview environment only, overriding the preview-wide value
-prisma project env add 'EMAIL_API_KEY=<value>' --project '<project id>' --branch 'staging'
 ```
 
-`update`, `list` and `delete` take the same flags. A deployment receives every variable of its class with its own branch's overrides on top, so a preview-wide value reaches every new preview environment.
+`update`, `list` and `delete` take the same flags. Set a value in a custom group in the Prisma Console. A value set in a group reaches every new environment whose branch receives that group.
+
+A deployment receives every value of its branch's group, then that branch's overrides, then the variables set on its service in the Console; a later one wins. Branch overrides are being removed from the platform, so set values in a group instead. The deploy checks the branch's group and its overrides. It does not see a value set on one service in the Console, so a variable a service needs that is set only there fails the deploy as missing. A change you make to a Composer service in the Console lasts until the next `prisma deploy`.
 
 The platform copies the variables into a deployment when it creates it. A value you change reaches a service at its next deploy, and that deploy replaces exactly the services that read the variable.
 
 ### What the deploy checks
 
-The `check environment variables` step looks up every platform variable the app reads, before any service or database is created. It reads whether a value exists, never the value.
+The `check environment variables` step asks Prisma Cloud once which variables the environment's branch receives, and looks up every platform variable the app reads in that answer, before any service or database is created. It reads whether a value exists, never the value. For `production` it asks about the project's default branch. If Prisma Cloud cannot answer, the deploy fails, naming the call, the project and the branch, and the HTTP status when the client reports one. A 404 can mean the platform does not offer this read yet.
 
 - **A variable a service needs that has no value fails the deploy.** Whether a service needs it is decided by the service's input schema: the deploy leaves the variable out and validates the input. A required field fails; an optional one does not.
 
@@ -312,10 +312,9 @@ The `check environment variables` step looks up every platform variable the app 
 
   Set it on the platform, then deploy again:
     - prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_…' --role preview
-    - prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_…' --branch 'staging'
   ```
 
-  For `production` the command uses `--role production`. For any other environment the preview-wide command comes first, so that the next preview environment has the value too.
+  The command follows the group the branch receives: `--role production` for the `production` group and `--role preview` for the `preview` group. For a custom group, or a group of a kind this Composer version does not know, the deploy names the group and says to set the value there in the Prisma Console: `Set EMAIL_API_KEY in the variable group "staging" in the Prisma Console.`
 - **A variable nothing needs that has no value is listed, and the deploy goes on.** The list prints right after the step, and again at the end of the deploy output:
 
   ```text
@@ -332,7 +331,7 @@ A new app's first deploy creates its project, then stops at this step if a servi
 
 At boot, an unset or empty variable leaves its field out of the service's input, and the service's schema decides. A service whose schema refuses the input fails at boot, and the error ends with the names of the variables that had no value. **Prisma Cloud still reports a service that fails at boot as running, and the deploy promotes it**, so the deploy succeeds; the error is in `prisma service logs <service> --project <project id>`.
 
-Every deployment on Prisma Cloud receives every variable of its class, including the ones another service reads. Under `prisma dev` each service receives only its own.
+Every deployment on Prisma Cloud receives every variable of its branch's group, including the ones another service reads. Under `prisma dev` each service receives only its own.
 
 ### Names
 
@@ -444,7 +443,7 @@ pattern: on push, run `prisma deploy --environment "pr-$PR_NUMBER"`; on
 close, run a script like the one under [Removing an app or an environment](#removing-an-app-or-an-environment)
 that passes that name, `environment: 'pr-42'` for PR 42.
 
-One extra: if your app declares platform variables (see [Building an app § Platform variables](building-an-app.md#platform-variables)), they live on the platform, and CI does not supply them. Set each one once with `--role preview`, and every new `pr-42` environment reads it ([Platform variables](#platform-variables)). A variable a service needs that has no value fails the deploy, naming it. A root input field is different: the deploy reads it from the app configuration on every deploy, so CI exports it, or commits it in `.env.<environment>` and lists `dotenv()`, every time.
+One extra: if your app declares platform variables (see [Building an app § Platform variables](building-an-app.md#platform-variables)), they live on the platform, and CI does not supply them. Set each one once in the group the `pr-42` branches receive, `--role preview` for the `preview` group, and every new `pr-42` environment reads it ([Platform variables](#platform-variables)). A variable a service needs that has no value fails the deploy, naming it. A root input field is different: the deploy reads it from the app configuration on every deploy, so CI exports it, or commits it in `.env.<environment>` and lists `dotenv()`, every time.
 
 A root's input can come from a committed `.env.<environment>` file per environment ([Values from outside the code](building-an-app.md#values-from-outside-the-code)). Keep secrets out of committed files: put them in CI's secret store and keep `environmentVariables()` in `secrets`.
 

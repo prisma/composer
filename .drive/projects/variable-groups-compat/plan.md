@@ -12,6 +12,10 @@ Design sections 4.3 and 4.4. Builds on: nothing. Hands to slice 2: the client vi
 
 Design section 4.1. Builds on: slice 1. Merges when the new read is live in production with the missing-group-id defect fixed. Until then the pull request is a draft.
 
+Before merge: check again whether `prisma variable` has shipped (if it has, the custom-group hint becomes its command), and run manual QA once more against the platform's real read.
+
+Note for any later read by `serviceId`: for a key set both as a branch override and as a service variable, the platform's read reports the override (it layers overrides last), while its deployment gives the service the service variable (it layers service variables last). A trigger built from that read would miss a change to the service variable. Raise it with the platform team before relying on that read.
+
 ## Slice 3: a service's `COMPOSER_` keys travel with its deployment
 
 Design section 4.2. Builds on: the open pull request "an unchanged deploy no longer replaces a service that depends on another service", merged. Independent of slice 2. Opened early as a draft, with `pnpm` patches standing in for the upstream packages, for Ty to align his interface against. Needs one pull request on Distilled and one on Alchemy once the platform's field is final. Merges when the platform accepts `variables` in production and both upstream packages have released.

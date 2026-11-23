@@ -123,8 +123,8 @@ signingKey.expose();                     // the one door to the value
 The round trip carries only the name, never the value:
 
 1. **Bind.** The app root provisions a platform secret node and binds its value, and each module on the way passes it on as a field of its input. Load records each service's input binding and each read in `valueReads`, and preflight collects every platform secret, also one no service reads.
-2. **Set.** The operator sets the variable on the platform with `prisma project env add`, for production, for every preview environment, or for one. The deploy does not copy a value from the app secrets to the platform.
-3. **Preflight.** Before Alchemy runs, the deploy checks whether each name has a row the environment sees, and writes none. A missing name that a service's schema requires fails the deploy, with its readers and the command that sets it; a missing name nothing requires is listed and the deploy goes on.
+2. **Set.** The operator sets the variable on the platform in the variable group the environment's branch receives. The deploy does not copy a value from the app secrets to the platform.
+3. **Preflight.** Before Alchemy runs, the deploy reads once which keys the environment's branch receives, checks each name against that list, and writes none. A missing name that a service's schema requires fails the deploy, with its readers and the command that sets it; a missing name nothing requires is listed and the deploy goes on.
 4. **Marker.** The target writes the service's input document with a marker in place of each secret field, naming the variable, not its value:
    ```json
    { "signingKey": { "$platform": { "name": "AUTH_SIGNING_KEY", "secret": true } } }
