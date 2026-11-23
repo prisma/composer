@@ -47,7 +47,7 @@ importers:
         specifier: ^1.7.0
         version: 1.7.0
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:packages/9-public/composer
       '@prisma/composer-cli':
         specifier: workspace:*
@@ -80,13 +80,13 @@ importers:
   examples/auth:
     dependencies:
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-cli':
         specifier: workspace:*
         version: link:../../packages/9-public/composer-cli
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer-prisma-cloud
       '@prisma/orm-postgres':
         specifier: 8.0.0-rc.25
@@ -120,13 +120,13 @@ importers:
         specifier: ^3.1085.0
         version: 3.1087.0
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-cli':
         specifier: workspace:*
         version: link:../../packages/9-public/composer-cli
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer-prisma-cloud
       alchemy:
         specifier: 'catalog:'
@@ -151,10 +151,10 @@ importers:
         specifier: 'catalog:'
         version: 4.1.4(effect@4.1.4)
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer-prisma-cloud
       alchemy:
         specifier: 'catalog:'
@@ -182,10 +182,10 @@ importers:
   examples/email:
     dependencies:
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer-prisma-cloud
       '@react-email/components':
         specifier: ^1.0.12
@@ -228,10 +228,10 @@ importers:
   examples/orm-demo:
     dependencies:
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer-prisma-cloud
       '@prisma/orm-postgres':
         specifier: 8.0.0-rc.25
@@ -265,13 +265,13 @@ importers:
   examples/root-input:
     dependencies:
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-cli':
         specifier: workspace:*
         version: link:../../packages/9-public/composer-cli
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer-prisma-cloud
       arktype:
         specifier: ^2.2.3
@@ -293,10 +293,10 @@ importers:
         specifier: ^3.1085.0
         version: 3.1087.0
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer-prisma-cloud
       alchemy:
         specifier: 'catalog:'
@@ -324,25 +324,25 @@ importers:
         specifier: 'catalog:'
         version: 4.1.4(effect@4.1.4)
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-cli':
         specifier: workspace:*
         version: link:../../packages/9-public/composer-cli
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer-prisma-cloud
       '@store/catalog':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:modules/catalog
       '@store/orders':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:modules/orders
       '@store/promotions':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:modules/promotions
       '@store/storefront':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:modules/storefront
       alchemy:
         specifier: 'catalog:'
@@ -377,10 +377,10 @@ importers:
         version: 8.22.0
     devDependencies:
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../../packages/9-public/composer-prisma-cloud
       '@types/bun':
         specifier: ^1.3.13
@@ -401,7 +401,7 @@ importers:
         specifier: 8.0.0-rc.25
         version: 8.0.0-rc.25(@prisma/cli-engine@0.10.4(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(@types/pg@8.20.4)(magicast@0.5.5)(pg@8.22.0)(temporal-polyfill@1.0.8)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@store/catalog':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../catalog
       arktype:
         specifier: ^2.2.3
@@ -411,10 +411,10 @@ importers:
         version: 8.22.0
     devDependencies:
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../../packages/9-public/composer-prisma-cloud
       '@types/bun':
         specifier: ^1.3.13
@@ -432,17 +432,17 @@ importers:
   examples/store/modules/promotions:
     dependencies:
       '@store/catalog':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../catalog
       arktype:
         specifier: ^2.2.3
         version: 2.2.7
     devDependencies:
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../../packages/9-public/composer-prisma-cloud
       '@types/bun':
         specifier: ^1.3.13
@@ -454,16 +454,16 @@ importers:
   examples/store/modules/storefront:
     dependencies:
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../../packages/9-public/composer-prisma-cloud
       '@store/catalog':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../catalog
       '@store/orders':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../orders
       arktype:
         specifier: ^2.2.3
@@ -503,16 +503,16 @@ importers:
         specifier: 'catalog:'
         version: 4.1.4(effect@4.1.4)
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer-prisma-cloud
       '@storefront-auth/auth':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:modules/auth
       '@storefront-auth/storefront':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:modules/storefront
       alchemy:
         specifier: 'catalog:'
@@ -547,10 +547,10 @@ importers:
         version: 2.2.7
     devDependencies:
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../../packages/9-public/composer-prisma-cloud
       '@types/bun':
         specifier: ^1.3.13
@@ -562,13 +562,13 @@ importers:
   examples/storefront-auth/modules/storefront:
     dependencies:
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../../packages/9-public/composer-prisma-cloud
       '@storefront-auth/auth':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../auth
       arktype:
         specifier: ^2.2.3
@@ -605,10 +605,10 @@ importers:
   examples/streams:
     dependencies:
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer-prisma-cloud
     devDependencies:
       '@prisma/composer-cli':
@@ -630,7 +630,7 @@ importers:
   packages/0-framework/0-foundation/foundation:
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../tsdown-config
       arktype:
         specifier: ^2.2.3
@@ -657,7 +657,7 @@ importers:
   packages/0-framework/1-core/core:
     dependencies:
       '@internal/foundation':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-foundation/foundation
       '@standard-schema/spec':
         specifier: ^1.1.0
@@ -670,7 +670,7 @@ importers:
         version: 4.1.4
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -694,7 +694,7 @@ importers:
   packages/0-framework/2-authoring/bundle-paths:
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-foundation/tsdown-config
       tsdown:
         specifier: ^0.22.7
@@ -706,11 +706,11 @@ importers:
   packages/0-framework/2-authoring/http:
     dependencies:
       '@internal/core':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-core/core
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -728,17 +728,17 @@ importers:
   packages/0-framework/2-authoring/nextjs:
     dependencies:
       '@internal/bundle-paths':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../bundle-paths
       '@internal/core':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-core/core
       esbuild:
         specifier: ^0.28.1
         version: 0.28.2
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -756,10 +756,10 @@ importers:
   packages/0-framework/2-authoring/node:
     dependencies:
       '@internal/bundle-paths':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../bundle-paths
       '@internal/core':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-core/core
       '@vercel/nft':
         specifier: ^1.10.2
@@ -769,7 +769,7 @@ importers:
         version: 0.28.2
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -787,10 +787,10 @@ importers:
   packages/0-framework/2-authoring/service-rpc:
     dependencies:
       '@internal/core':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-core/core
       '@internal/foundation':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-foundation/foundation
       '@standard-schema/spec':
         specifier: ^1.1.0
@@ -800,7 +800,7 @@ importers:
         version: 2.2.7
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -818,14 +818,14 @@ importers:
   packages/0-framework/3-tooling/assemble:
     dependencies:
       '@internal/core':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-core/core
       '@internal/foundation':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-foundation/foundation
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -843,13 +843,13 @@ importers:
   packages/0-framework/3-tooling/cli:
     dependencies:
       '@internal/assemble':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../assemble
       '@internal/core':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-core/core
       '@internal/foundation':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-foundation/foundation
       '@prisma/cli-engine':
         specifier: 0.10.4
@@ -865,7 +865,7 @@ importers:
         specifier: 'catalog:'
         version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.25(@prisma/cli-engine@0.10.4(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(@types/pg@8.20.4)(magicast@0.5.5)(pg@8.22.0)(temporal-polyfill@1.0.8)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.4)(prisma@8.0.0-rc.34(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -889,10 +889,10 @@ importers:
   packages/1-prisma-cloud/0-lowering/dev-emulators:
     dependencies:
       '@internal/foundation':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/0-foundation/foundation
       '@internal/s3-protocol':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../s3-protocol
       get-port:
         specifier: ^7.2.0
@@ -908,7 +908,7 @@ importers:
         specifier: ^3.1085.0
         version: 3.1087.0
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@prisma/dev':
         specifier: ^0.25.2
@@ -942,7 +942,7 @@ importers:
         version: 4.1.6
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -960,22 +960,22 @@ importers:
         specifier: 'catalog:'
         version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.25(@prisma/cli-engine@0.10.4(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(@types/pg@8.20.4)(magicast@0.5.5)(pg@8.22.0)(temporal-polyfill@1.0.8)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.4)(prisma@8.0.0-rc.34(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       '@internal/bundle-paths':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/2-authoring/bundle-paths
       '@internal/core':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/1-core/core
       '@internal/dev-emulators':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../dev-emulators
       '@internal/input-document':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../input-document
       '@internal/lowering':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../lowering
       '@internal/s3-protocol':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../s3-protocol
       '@prisma/dev':
         specifier: ^0.25.2
@@ -994,10 +994,10 @@ importers:
         specifier: ^3.1085.0
         version: 3.1087.0
       '@internal/foundation':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/0-foundation/foundation
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -1030,13 +1030,13 @@ importers:
         specifier: 'catalog:'
         version: 4.1.4(effect@4.1.4)(redis@6.2.1)
       '@internal/bundle-paths':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/2-authoring/bundle-paths
       '@internal/core':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/1-core/core
       '@internal/foundation':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/0-foundation/foundation
       '@prisma/management-api-sdk':
         specifier: ^1.80.0
@@ -1049,7 +1049,7 @@ importers:
         version: 4.1.4
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -1073,7 +1073,7 @@ importers:
         specifier: ^3.1085.0
         version: 3.1087.0
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -1094,34 +1094,34 @@ importers:
         specifier: 'catalog:'
         version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.25(@prisma/cli-engine@0.10.4(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(@types/pg@8.20.4)(magicast@0.5.5)(pg@8.22.0)(temporal-polyfill@1.0.8)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.4)(prisma@8.0.0-rc.34(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       '@internal/core':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/1-core/core
       '@internal/dev-emulators':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-lowering/dev-emulators
       '@internal/foundation':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/0-foundation/foundation
       '@internal/http':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/2-authoring/http
       '@internal/input-document':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-lowering/input-document
       '@internal/local-target':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-lowering/local-target
       '@internal/lowering':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-lowering/lowering
       '@internal/node':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/2-authoring/node
       '@internal/s3-protocol':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-lowering/s3-protocol
       '@internal/service-rpc':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/2-authoring/service-rpc
       '@prisma/orm-postgres':
         specifier: 8.0.0-rc.25
@@ -1155,7 +1155,7 @@ importers:
         specifier: 'catalog:'
         version: 1.0.0-rc.20(effect@4.1.4)
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@prisma/cli-engine':
         specifier: 0.10.4
@@ -1182,25 +1182,25 @@ importers:
   packages/1-prisma-cloud/2-shared-modules/auth:
     dependencies:
       '@internal/core':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/1-core/core
       '@internal/email':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../email
       '@internal/foundation':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/0-foundation/foundation
       '@internal/http':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/2-authoring/http
       '@internal/node':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/2-authoring/node
       '@internal/prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-extensions/target
       '@internal/service-rpc':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/2-authoring/service-rpc
       '@prisma/orm-postgres':
         specifier: 8.0.0-rc.25
@@ -1222,10 +1222,10 @@ importers:
         version: 8.22.0
     devDependencies:
       '@internal/input-document':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-lowering/input-document
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@prisma/dev':
         specifier: ^0.25.2
@@ -1249,19 +1249,19 @@ importers:
   packages/1-prisma-cloud/2-shared-modules/cron:
     dependencies:
       '@internal/core':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/1-core/core
       '@internal/foundation':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/0-foundation/foundation
       '@internal/node':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/2-authoring/node
       '@internal/prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-extensions/target
       '@internal/service-rpc':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/2-authoring/service-rpc
       '@prisma/compute':
         specifier: 0.1.0-beta.0
@@ -1271,10 +1271,10 @@ importers:
         version: 2.2.7
     devDependencies:
       '@internal/input-document':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-lowering/input-document
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -1292,19 +1292,19 @@ importers:
   packages/1-prisma-cloud/2-shared-modules/email:
     dependencies:
       '@internal/core':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/1-core/core
       '@internal/foundation':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/0-foundation/foundation
       '@internal/node':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/2-authoring/node
       '@internal/prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-extensions/target
       '@internal/service-rpc':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/2-authoring/service-rpc
       arktype:
         specifier: ^2.2.3
@@ -1314,10 +1314,10 @@ importers:
         version: 9.0.3
     devDependencies:
       '@internal/input-document':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-lowering/input-document
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@prisma/dev':
         specifier: ^0.25.2
@@ -1341,16 +1341,16 @@ importers:
   packages/1-prisma-cloud/2-shared-modules/storage:
     dependencies:
       '@internal/core':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/1-core/core
       '@internal/node':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/2-authoring/node
       '@internal/prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-extensions/target
       '@internal/s3-protocol':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-lowering/s3-protocol
     devDependencies:
       '@aws-sdk/client-s3':
@@ -1360,10 +1360,10 @@ importers:
         specifier: ^3.1085.0
         version: 3.1087.0
       '@internal/input-document':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-lowering/input-document
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@prisma/dev':
         specifier: ^0.25.2
@@ -1387,16 +1387,16 @@ importers:
         specifier: 0.2.6
         version: 0.2.6
       '@internal/core':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/1-core/core
       '@internal/node':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/2-authoring/node
       '@internal/prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-extensions/target
       '@internal/storage':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../storage
       '@prisma/streams-local':
         specifier: 0.1.11
@@ -1409,10 +1409,10 @@ importers:
         specifier: 0.2.3
         version: 0.2.3(@types/node@26.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@internal/input-document':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-lowering/input-document
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -1449,34 +1449,34 @@ importers:
         version: 0.28.2
     devDependencies:
       '@internal/assemble':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/3-tooling/assemble
       '@internal/cli':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/3-tooling/cli
       '@internal/core':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/1-core/core
       '@internal/foundation':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/0-foundation/foundation
       '@internal/http':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/2-authoring/http
       '@internal/lowering':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-prisma-cloud/0-lowering/lowering
       '@internal/nextjs':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/2-authoring/nextjs
       '@internal/node':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/2-authoring/node
       '@internal/service-rpc':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/2-authoring/service-rpc
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/0-foundation/tsdown-config
       '@types/node':
         specifier: ^26.0.1
@@ -1497,7 +1497,7 @@ importers:
   packages/9-public/composer-cli:
     dependencies:
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../composer
       '@prisma/management-api-sdk':
         specifier: ^1.80.0
@@ -1513,19 +1513,19 @@ importers:
         version: 0.28.2
     devDependencies:
       '@internal/cli':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/3-tooling/cli
       '@internal/dev-emulators':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-prisma-cloud/0-lowering/dev-emulators
       '@internal/foundation':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/0-foundation/foundation
       '@internal/lowering':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-prisma-cloud/0-lowering/lowering
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/0-foundation/tsdown-config
       '@prisma/cli-engine':
         specifier: 0.10.4
@@ -1561,7 +1561,7 @@ importers:
         specifier: 'catalog:'
         version: 4.1.4(effect@4.1.4)
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../composer
       '@prisma/dev':
         specifier: ^0.25.2
@@ -1595,58 +1595,58 @@ importers:
         version: 0.22.12(typescript@6.0.3)
     devDependencies:
       '@internal/auth':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-prisma-cloud/2-shared-modules/auth
       '@internal/core':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/1-core/core
       '@internal/cron':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-prisma-cloud/2-shared-modules/cron
       '@internal/dev-emulators':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-prisma-cloud/0-lowering/dev-emulators
       '@internal/email':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-prisma-cloud/2-shared-modules/email
       '@internal/foundation':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/0-foundation/foundation
       '@internal/http':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/2-authoring/http
       '@internal/input-document':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-prisma-cloud/0-lowering/input-document
       '@internal/local-target':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-prisma-cloud/0-lowering/local-target
       '@internal/lowering':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-prisma-cloud/0-lowering/lowering
       '@internal/nextjs':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/2-authoring/nextjs
       '@internal/node':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/2-authoring/node
       '@internal/prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-prisma-cloud/1-extensions/target
       '@internal/s3-protocol':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-prisma-cloud/0-lowering/s3-protocol
       '@internal/service-rpc':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/2-authoring/service-rpc
       '@internal/storage':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-prisma-cloud/2-shared-modules/storage
       '@internal/streams':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../1-prisma-cloud/2-shared-modules/streams
       '@internal/tsdown-config':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../0-framework/0-foundation/tsdown-config
       '@prisma/orm-postgres':
         specifier: 8.0.0-rc.25
@@ -1673,16 +1673,16 @@ importers:
         specifier: ^3.1085.0
         version: 3.1087.0
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-cli':
         specifier: workspace:*
         version: link:../../packages/9-public/composer-cli
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../packages/9-public/composer-prisma-cloud
       '@prisma/example-store':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../../examples/store
       '@types/bun':
         specifier: ^1.3.13
@@ -1712,10 +1712,10 @@ importers:
   website:
     dependencies:
       '@prisma/composer':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.39.0
+        specifier: workspace:0.40.0
         version: link:../packages/9-public/composer-prisma-cloud
       alchemy:
         specifier: 'catalog:'
