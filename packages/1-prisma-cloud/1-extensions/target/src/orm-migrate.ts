@@ -179,8 +179,9 @@ export async function resolveTargetRef(
     if (ref.policies !== undefined) {
       throw new OrmMigrationError(
         'TARGET_REF_POLICIES_UNSUPPORTED',
-        `targetRef "${targetRef}" declares policies, and Composer does not yet deploy a ref with policies`,
-        `Remove "policies" from ${refsDir}/${targetRef}.json to deploy it, or apply it with \`prisma db migrate --to ${targetRef}\`, which checks the policies.`,
+        `targetRef "${targetRef}" declares policies, and Composer does not yet deploy a ref with policies. ` +
+          `Every deploy of this ref is refused until "policies" is removed from ${refsDir}/${targetRef}.json. ` +
+          `\`prisma db migrate --to ${targetRef}\` applies the ref with its policies checked, but the deploy still refuses the ref while the file declares them.`,
       );
     }
     return { hash: ref.hash, invariants: ref.invariants };

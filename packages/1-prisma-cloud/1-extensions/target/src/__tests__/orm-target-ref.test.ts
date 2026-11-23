@@ -142,8 +142,13 @@ describe('resolveTargetRef', () => {
       }
       expect(thrown).toBeInstanceOf(OrmMigrationError);
       expect((thrown as OrmMigrationError).code).toBe('TARGET_REF_POLICIES_UNSUPPORTED');
-      expect((thrown as OrmMigrationError).message).toContain('production');
-      expect((thrown as OrmMigrationError).why).toContain('prisma db migrate --to production');
+      const { message } = thrown as OrmMigrationError;
+      expect(message).toContain('targetRef "production" declares policies');
+      expect(message).toContain('Composer does not yet deploy a ref with policies');
+      expect(message).toContain(
+        `refused until "policies" is removed from ${refsDir}/production.json`,
+      );
+      expect(message).toContain('prisma db migrate --to production');
     });
   });
 
