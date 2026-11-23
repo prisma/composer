@@ -1,12 +1,14 @@
 # ADR-0046: The published packages take the Prisma ORM facade as a peer dependency
 
+Amended 2026-11-23: `@prisma/composer-prisma-cloud` also peers on `pg` `^8.22.0` and `@types/pg` `^8.20.0`, because `@prisma/orm-postgres` 8.0.0-rc.25 does. Composer creates the `pg.Pool` it hands to the facade, so the pool and the facade must load one copy of `pg`, the one the application resolved, for its classes to be the same. They are ranges on purpose: they match the facade's own peers, and the exact-pin rule below covers only the `@prisma/orm-*` packages. A user whose package manager does not install peers adds `pg` and `@types/pg` by hand, as they already add `@prisma/orm-postgres`.
+
 ## Decision
 
 `@prisma/composer-prisma-cloud` declares `@prisma/orm-postgres` — the Prisma ORM postgres facade — as a **peer dependency** pinned to one exact version, plus a devDependency at the same version so the workspace can build. It is not a regular dependency.
 
 The application installs the facade itself. Composer's `/orm` and `/auth/pack` entrypoints import it at runtime from whatever copy the application resolved.
 
-Every `@prisma/orm-*` specifier anywhere in this workspace is a single exact version, and all of them name the same version. `scripts/lint-orm-pins.mjs` enforces both halves.
+Every `@prisma/orm-*` specifier anywhere in this workspace is a single exact version, and all of them name the same version. That includes the root `package.json`'s `pnpm.overrides` entries for an `@prisma/orm-*` package. `scripts/lint-orm-pins.mjs` enforces both halves.
 
 The packages Composer *drives* rather than *extends* stay regular dependencies: `@prisma/orm-toolchain` carries the config loader, the CLI and the migration tools, which Composer's deploy runs on its own behalf.
 
