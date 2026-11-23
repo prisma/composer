@@ -34,7 +34,7 @@
  */
 
 import { createPostgresControlClient } from '@prisma/orm-postgres/control';
-import { readRef } from '@prisma/orm-toolchain/migration-tools/refs';
+import { type RefEntry, readRef } from '@prisma/orm-toolchain/migration-tools/refs';
 import {
   APP_SPACE_ID,
   readContractSpaceHeadRef,
@@ -73,6 +73,8 @@ export interface OrmMigrationOutcome {
  * config-loaded emitted contract's storage hash does not match the database
  * resource's declared current contract. `TARGET_REF_NOT_FOUND` — the resource
  * named a `targetRef` with no readable `migrations/app/refs/<name>.json`.
+ * `TARGET_REF_POLICIES_UNSUPPORTED` — the named ref declares `policies`,
+ * which Composer does not deploy yet.
  */
 export type OrmMigrationFailureCode =
   | 'MIGRATION_PATH_NOT_FOUND'
@@ -80,7 +82,8 @@ export type OrmMigrationFailureCode =
   | 'CONTRACT_INVALID'
   | 'CONTRACT_ARTIFACT_UNREADABLE'
   | 'CONTRACT_IDENTITY_MISMATCH'
-  | 'TARGET_REF_NOT_FOUND';
+  | 'TARGET_REF_NOT_FOUND'
+  | 'TARGET_REF_POLICIES_UNSUPPORTED';
 
 /** A deploy-failing migration error — surfaced, never swallowed. */
 export class OrmMigrationError extends Error {
@@ -163,9 +166,9 @@ export async function resolveTargetRef(
 ): Promise<PnTargetRef> {
   if (targetRef !== undefined) {
     const refsDir = spaceRefsDirectory(spaceMigrationDirectory(migrationsDir, APP_SPACE_ID));
+    let ref: RefEntry;
     try {
-      const ref = await readRef(refsDir, targetRef);
-      return { hash: ref.hash, invariants: ref.invariants };
+      ref = await readRef(refsDir, targetRef);
     } catch (error) {
       throw new OrmMigrationError(
         'TARGET_REF_NOT_FOUND',
@@ -173,6 +176,14 @@ export async function resolveTargetRef(
         error instanceof Error ? error.message : String(error),
       );
     }
+    if (ref.policies !== undefined) {
+      throw new OrmMigrationError(
+        'TARGET_REF_POLICIES_UNSUPPORTED',
+        `targetRef "${targetRef}" declares policies, and Composer does not yet deploy a ref with policies`,
+        `Remove "policies" from ${refsDir}/${targetRef}.json to deploy it, or apply it with \`prisma db migrate --to ${targetRef}\`, which checks the policies.`,
+      );
+    }
+    return { hash: ref.hash, invariants: ref.invariants };
   }
   const head = await readContractSpaceHeadRef(migrationsDir, APP_SPACE_ID);
   if (head !== null) return { hash: head.hash, invariants: head.invariants };
@@ -281,10 +292,11 @@ async function runMigration(
 
     // Walk the AUTHORED migration graph toward the ref — a fresh DB starts
     // from empty and replays the committed baseline like any other migrate.
-    // With a named ref, PN targets its hash and threads its invariants into
-    // path planning (the same ref target the CLI's `migrate --to` passes);
-    // with the default head, PN's own head-ref semantics apply. Fails on no
-    // path / runner error; never synthesizes.
+    // With a named ref, the ORM targets its hash and threads its invariants
+    // into path planning. The CLI's `migrate --to` passes the ref's policies
+    // too; a ref that declares any was refused in `resolveTargetRef`, so
+    // nothing is lost here. With the default head, the ORM's own head-ref
+    // semantics apply. Fails on no path / runner error; never synthesizes.
     const result = await client.migrate({
       contract: contractJson,
       migrationsDir,
