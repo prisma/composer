@@ -52,15 +52,15 @@
     "@prisma/orm-toolchain": "8.0.0-rc.25",
     "@standard-schema/spec": "^1.1.0",
     "alchemy": "catalog:",
-    "arktype": "^2.2.3",
+    "arktype": "^2.2.9",
     "effect": "catalog:",
-    "jose": "^6.1.3",
+    "jose": "^6.2.17",
     "pathe": "^2.0.3",
     "tsdown": "^0.22.7"
   },
   "peerDependencies": {
     "@prisma/orm-postgres": "8.0.0-rc.25",
-    "@types/pg": "^8.20.0",
+    "@types/pg": "^8.23.1",
     "pg": "^8.22.0"
   },
   "devDependencies": {
@@ -85,8 +85,8 @@
     "@prisma/orm-postgres": "8.0.0-rc.25",
     "@types/bun": "^1.3.13",
     "@types/node": "^26.0.1",
-    "@types/pg": "^8.20.0",
-    "pg": "8.22.0",
+    "@types/pg": "^8.23.1",
+    "pg": "8.23.1",
     "typescript": "^6.0.3"
   },
   "license": "Apache-2.0",

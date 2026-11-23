@@ -17,7 +17,7 @@
     "@prisma/composer": "workspace:0.40.0",
     "@prisma/composer-prisma-cloud": "workspace:0.40.0",
     "alchemy": "catalog:",
-    "arktype": "^2.2.3",
+    "arktype": "^2.2.9",
     "effect": "catalog:"
   },
   "devDependencies": {

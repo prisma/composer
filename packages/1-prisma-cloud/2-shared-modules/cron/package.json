@@ -32,7 +32,7 @@
     "@internal/prisma-cloud": "workspace:0.40.0",
     "@internal/service-rpc": "workspace:0.40.0",
     "@prisma/compute": "0.1.0-beta.0",
-    "arktype": "^2.2.3"
+    "arktype": "^2.2.9"
   },
   "devDependencies": {
     "@internal/input-document": "workspace:0.40.0",

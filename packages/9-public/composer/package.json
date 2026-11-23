@@ -44,7 +44,7 @@
     "@prisma/management-api-sdk": "^1.101.0"
   },
   "peerDependencies": {
-    "arktype": "^2.2.3",
+    "arktype": "^2.2.9",
     "zod": "^4.4.3"
   },
   "peerDependenciesMeta": {
@@ -69,7 +69,7 @@
     "@types/node": "^26.0.1",
     "tsdown": "^0.22.7",
     "typescript": "^6.0.3",
-    "arktype": "^2.2.3",
+    "arktype": "^2.2.9",
     "zod": "^4.4.3"
   },
   "license": "Apache-2.0",
