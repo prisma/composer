@@ -199,7 +199,7 @@ No `publicUrl` is declared for it, so the topology shows it as not public and Co
 | Module and root `input` as one schema; config adapters (separate work; only scenario 9 uses them) | Composer core |
 | RoutingUrl record on a Branch for a custom hostname, found by `logicalId`, created before DNS and before the service's deployment, pointing at a service, with its Foundry custom domain kept bound to the live deployment by the RoutingUrl repository; a hostname change replaces the old hostname | PDP |
 | Deploy output and Console distinguish: deployed, prisma.build URL ready, awaiting ownership claim, awaiting DNS, certificate pending | PDP and Composer |
-| Workspace domain ownership claim for an exact hostname or wildcard, verified with today's TXT value and re-verified on conflict; both Console-first and code-first setup | PDP |
+| Workspace domain ownership claim for an exact hostname or wildcard, verified with today's TXT value; `expiring` for 30 days when its record is no longer found, and `unverified` at once when another workspace's value is found; both Console-first and code-first setup | PDP |
 | Registering one RoutingUrl per hostname platform-wide, with the others reporting the hostname as in use | PDP |
 | RoutingUrl resource replacing `Prisma.CustomDomain` | upstream Alchemy provider |
 | The platform's hostname as an opt-in RoutingUrl, so "no public URL" becomes enforced | platform, later |

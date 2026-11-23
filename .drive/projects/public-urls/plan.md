@@ -21,27 +21,38 @@ Already done or running: the upstream Alchemy fix that lets a custom domain atta
 **Done.** Platform slice 1 merged in prisma/pdp-control-plane#5838 and slice 2 in prisma/pdp-control-plane#5847.
 
 - **Platform slice 1.** The `DomainOwnership` record, its repository, the create and delete interactors, and the `domain-ownerships` routes.
-- **Platform slice 2.** DomainOwnership on the platform's spec-and-status pattern. A domain ownership can be created before its TXT record exists. It is pending, and the response carries the record to publish. One sync interactor, `syncDomainOwnership`, looks up DNS and marks it verified once the record is found. A failed lookup is retried from the shared data-plane sync queue, which this slice builds for every later kind of row. Alchemy can publish the record through its DNS adapter and create the domain ownership the day it ships.
-- **Demo:** create a domain ownership for `shop.com` with no record and get it back pending with the record to publish; publish it, press check and see it verified; the same for `*.preview.shop.com`.
+- **Platform slice 2.** DomainOwnership on the platform's spec-and-status pattern. A domain ownership can be created before its TXT record exists. It is `unverified`, and the response carries the record to publish. One sync interactor, `syncDomainOwnership`, looks up DNS and marks it verified once the record is found. A failed lookup is retried from the shared data-plane sync queue, which this slice builds for every later kind of row. Alchemy can publish the record through its DNS adapter and create the domain ownership the day it ships.
+- **Demo:** create a domain ownership for `shop.com` with no record and get it back unverified with the record to publish; publish it, press check and see it verified; the same for `*.preview.shop.com`.
 
 ## Increment 3. A Composer author declares a hostname before DNS, and it goes live on its own
 
-**Started.** The RoutingUrl table and the stored status of RoutingUrls and domain ownerships merged in prisma/pdp-control-plane#5860. The RoutingUrl repository is the draft prisma/pdp-control-plane#5870.
+**Started.** Status on 2026-11-18:
+- **Platform slice 3 is in production** (prisma/pdp-control-plane#5924, 2026-11-06).
+- **The platform has since shipped more:**
+  - the Console's workspace Domains pages (its slice 4a);
+  - the emails before and after a hostname stops serving (its slice 4);
+  - a RoutingUrl and a domain ownership for every custom domain made on today's page and routes (its slice 4b, prisma/pdp-control-plane#6041);
+  - the backfill script for existing custom domains (prisma/pdp-control-plane#6063). The backfill has not run in production.
+- **The apex fix is in.** `RoutingUrls.md` now says an apex uses ALIAS, ANAME or a flattened CNAME.
+- **U2 is built and reviewed on the bot's forks, and held.** It waits for platform slice 8, as Will decided.
+- **P2 has not started.**
 
-- **Platform slice 3.** The `RoutingUrl` record, its repository, interactors and routes; `syncRoutingUrl` on the sync queue that slice 2 built; the alerts and the backfill; and today's custom-domain interactors, the existing Console page's backend and the old routes moved onto the records without changing what users see. A RoutingUrl is pending until its conditions are met and active once they are. A change of the service's live deployment does not change its status; it only re-points the Foundry custom domain. Nothing is sent to Foundry for a new RoutingUrl until its domain ownership is verified. Custom domains attached before the TXT check shipped on 24 October 2026 get a grandfathered domain ownership and an already-active RoutingUrl, so they keep serving with nothing for the customer to do. A grandfathered domain ownership has no end date. Checks run on it as on any other, but a missing record never revokes it. Only a conflict does: another workspace publishing its own value at the record name. It does not count as verified, so a new or changed hostname under it is not sent to Foundry. When an active RoutingUrl's domain ownership becomes pending, because its record is gone or a grandfathered one lost a conflict, the RoutingUrl goes back to pending and its custom domain is removed.
+- **Platform slice 3. Hostnames through the API.** Create, check, update and delete a hostname for a service through the Management API, before its DNS exists. A hostname is pending until every condition is met, and active once a covering domain ownership is verified and Foundry has registered the custom domain and issued its certificate. Nothing is sent to Foundry for a pending hostname whose domain ownership is not verified. Create and update take `createDomainOwnership`, default `true`: the route also creates an `unverified` domain ownership for the exact hostname when no verified one covers it. Composer leaves it at `true`, so a deploy before DNS gets the domain ownership with its hostname; the domain ownership belongs to the workspace, and Composer neither records nor deletes it. Check never creates anything. Ownership is met under a `verified` domain ownership, or, for a hostname that is already active, under an `expiring` one; becoming active needs `verified`. When no covering domain ownership keeps the hostname serving any more, it goes back to pending and its custom domain is removed. `syncRoutingUrl` runs on the sync queue slice 2 built. prisma/pdp-control-plane#5889 merged and deployed on 2026-11-06 before the slice: domain ownership statuses are now `unverified`, `verified` and `expiring`, and the API carries `expiresAt`. A verified domain ownership whose TXT record a lookup no longer finds becomes `expiring` for 30 days. Its active hostnames keep serving, but no new hostname starts serving under it. If the record is found again it becomes `verified`; if it is still missing at the first lookup at or after `expiresAt`, it becomes `unverified` and its hostnames stop. A lookup that finds another workspace's value makes it `unverified` at once. The slice is in progress on the branch `feat/routing-urls-through-the-api`, which folds in #5868 and #5870. The rest of what this increment used to hold moves to later platform slices: existing custom domains onto RoutingUrls, with the backfill, the expiry email, the daily recheck of expiring domain ownerships and the "stopped serving" email (slice 4); hostnames following the live deployment (slice 5); today's Console page and routes reading RoutingUrls (slice 6); the alerts and runbook (slice 9). In slice 4, a custom domain attached before the TXT check shipped on 24 October 2026 gets an already-active RoutingUrl and, unless a verified domain ownership covers it, an `expiring` domain ownership with `expiresAt` 30 days after the backfill. It keeps serving while the workspace publishes the TXT record.
 - **U2. The Alchemy RoutingUrl resource.** Create with no DNS, read conditions and the records to publish, update hostname or service, delete; found by `logicalId`; adopts a live row on the same service with the same hostname and no `logicalId` by writing the `logicalId` on it; refuses to change the hostname of a row that is serving to one that cannot serve yet, naming both hostnames and the records to publish, unless the platform refuses that update itself (design note 12). Written to Alchemy's own testing conventions with live credentials confirmed before dispatch, and released. Builds on platform slice 3 deployed.
 - **P2. Pending hostnames.** A named hostname lowers to `Prisma.RoutingUrl`; the deploy output names the first unmet condition and prints every record still to publish, with name, type and value; a deploy declaring a hostname nobody has set up yet succeeds and says how to prove ownership and which CNAME to publish; a change from a serving hostname to one that cannot serve fails the deploy (design note 12), switching a public URL from `Prisma.CustomDomain` to `Prisma.RoutingUrl` drops the custom domain from Alchemy state without calling its delete, because the delete would remove the platform row the RoutingUrl has just adopted and take the hostname out of service, with a test that proves no delete is sent; the RoutingUrl's Alchemy resource id is the node's address alone, not the address plus the hostname as in P1; `prisma deploy list` shows each public URL's hostname and platform id, joining the RoutingUrl row by its `logicalId`, which a P1 custom domain row lacks; `origin()` is unchanged. Builds on P1 and U2.
 - **Demo:** the spec's example app deploys production before `shop.com`'s DNS exists and succeeds; the author publishes the two records printed by the deploy; the hostname goes active with no further deploy and no Console.
 
 ## Increment 4. A Console user proves a domain and manages hostnames, behind a feature flag, then the old page goes
 
-The platform's slice 4, owned by Søren from the platform's Console brief: the Domains page in workspace settings and the service page's hostname section, built in Storybook from the start and wired to the slice 2 and slice 3 interactors when they exist; then the cutover that removes the existing domains page and deprecates the old routes.
+**Started.** The workspace Domains pages merged in prisma/pdp-control-plane#5933, behind an experimental feature. The service page's hostname section and the cutover are not started.
+
+The platform's slice 7, owned by Søren from the platform's Console brief: the Domains page in workspace settings and the service page's hostname section, built in Storybook from the start and wired to the domain ownership and hostname interactors after platform slice 6; then the cutover that removes the existing domains page and deprecates the old routes.
 
 - **Demo:** prove `shop.com` from the Domains page and watch it appear once the record is found; add a hostname on the service page before DNS, see the records to publish, and watch it go active after one press of check.
 
 ## Increment 5. A service nobody declared public has no public hostname
 
-- **Platform slice 5.** The `prisma.build` endpoint becomes a RoutingUrl a service can lack, with the backfill of existing endpoints into rows with no `logicalId`.
+- **Platform slice 8.** The `prisma.build` endpoint becomes a RoutingUrl a service can lack, with the backfill of existing endpoints into rows with no `logicalId`.
 - **P3. `publicUrl.prismaBuild()` lowers to that RoutingUrl**, and U2's adoption takes over the row the backfill made for an existing service. The deploy output names every service that has no public URL, saying whether it is still reachable at its platform hostname (ADR-0060 asks for this; P1 left it out because until P3 every service is reachable and the message would change). Specified against [step-two-migration-scenarios.md](design/step-two-migration-scenarios.md) once increment 3 has landed.
 - **Demo:** a new service with no `publicUrl()` answers on no hostname; an existing app's services keep their addresses through the upgrade; every migration scenario holds against a real Branch.
 
@@ -52,22 +63,24 @@ The platform's slice 4, owned by Søren from the platform's Console brief: the D
 
 ## Later, recorded in `.drive/deferred.md` and the platform plan
 
-- A pending domain ownership the platform polls for, so the user can close the Domains page.
+- The platform rechecking unverified domain ownerships on a schedule, so the user can close the Domains page.
 - Composer publishing a hostname's records through a DNS adapter.
 - A third kind of object on the consistency mechanism.
 - After this project: rename `name` to `id` on every node with an identity, with an ADR superseding ADR-0006's reasoning. `publicUrl()` takes `id` from the start.
 
 ## Order
 
-| Work | Starts when |
-| --- | --- |
-| C1, P1, platform slices 0, 1 and 2 | merged |
-| platform slice 3 | started |
-| Søren's Storybook views | now |
-| U2 | platform slice 3 is deployed |
-| P2 | P1 and U2 have merged |
-| the Console wiring and cutover | slices 2 and 3 have merged |
-| platform slice 5, then P3 | increment 3 has landed |
+| Work | Who | Starts when |
+| --- | --- | --- |
+| C1, P1, platform slices 0 to 3, 4a, 4 and 4b | done | merged |
+| platform slice 4c (run the backfill) | the platform session; Will approves each production write | being built; the backfill has not run |
+| platform slices 5, 6 and 9 | the platform session | in that order, after 4c |
+| U2 built and reviewed | done | held on the bot's forks |
+| platform slice 8's API half (`prisma.build` as a RoutingUrl, and the error codes) | the platform session | can start any time; not scheduled |
+| U2's two upstream pull requests | the agent Will assigns, from [brief.md](slices/u2-routing-url-resource/brief.md); Will opens them | platform slice 8's API half has shipped |
+| P2 | not assigned | U2 is released |
+| platform slice 7 (service page, cutover) and slice 10 (public docs) | slice 7: Søren with the platform session; slice 10: the platform session | platform slice 6 has merged |
+| P3 | not assigned | platform slice 8's API half has shipped |
 
 ## Close-out
 

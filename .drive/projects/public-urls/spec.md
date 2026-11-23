@@ -47,7 +47,7 @@ The work spans four repositories:
 - **prisma/pdp-control-plane**: the RoutingUrl records and domain ownership claims, their Management API routes and interactors, the repository operation that keeps Foundry consistent and the Worker queue that retries its failures, the backfill of existing custom domains, and the Console's custom hostnames on the service page and its Domains page of ownership claims. Its own project is `projects/routing-urls/` in that repository, with pdp-control-plane's ADR 015.
 - **Foundry**: unchanged. The control plane keeps it consistent over its existing endpoint and custom domain APIs.
 
-Existing custom domains keep working: PDP backfills them into RoutingUrl records with no `logicalId`. A hostname added in Console that the code later declares is adopted: the Alchemy resource writes the node's `logicalId` on the existing row, so nothing in Foundry changes.
+Existing custom domains keep serving: PDP backfills them into active RoutingUrl records with no `logicalId`. Unless a verified domain ownership already covers the hostname, the backfill also gives the workspace an `expiring` domain ownership for it, which expires 30 days later. If the workspace publishes the TXT record by then, it becomes `verified`; if not, the hostname stops serving. A hostname added in Console that the code later declares is adopted: the Alchemy resource writes the node's `logicalId` on the existing row, so nothing in Foundry changes.
 
 # Cross-cutting requirements
 
