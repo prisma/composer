@@ -37,11 +37,24 @@ export interface DeployLease {
   readonly expiresAt: string;
 }
 
-/** The server names the current holder in its 409 message; pass it through verbatim, hint appended. */
-const serverErrorText = (error: { error: { message: string; hint?: string } }): string =>
-  error.error.hint === undefined
-    ? error.error.message
-    : `${error.error.message} ${error.error.hint}`;
+/**
+ * The server names the current holder in its 409 message; pass it through
+ * verbatim, hint appended. Any other body, such as the 400 validation body
+ * whose `error` is a list, is reported as its JSON.
+ */
+export const serverErrorText = (body: { readonly error: unknown }): string => {
+  const { error } = body;
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string'
+  ) {
+    const hint = 'hint' in error && typeof error.hint === 'string' ? error.hint : undefined;
+    return hint === undefined ? error.message : `${error.message} ${hint}`;
+  }
+  return JSON.stringify(body);
+};
 
 const transportError = (cause: unknown): PrismaApiError =>
   new PrismaApiError({ status: 0, message: String(cause) });
