@@ -48,7 +48,7 @@
     "@effect/platform-node-shared": "catalog:",
     "@prisma/composer": "workspace:0.40.0",
     "@prisma/dev": "^0.25.2",
-    "@prisma/management-api-sdk": "^1.80.0",
+    "@prisma/management-api-sdk": "^1.101.0",
     "@prisma/orm-toolchain": "8.0.0-rc.25",
     "@standard-schema/spec": "^1.1.0",
     "alchemy": "catalog:",
