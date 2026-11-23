@@ -67,7 +67,7 @@ Upgrade with the same `domain` first, and change the hostname in a later deploy.
 
 Until the routes go it keeps working: it now fails with `PrismaDomainOwnershipRequired`, which names the TXT record, when Prisma refuses a hostname for want of proof.
 
-One behaviour changes from `main`. It now calls Prisma through Distilled, which does not expose the response status, so it no longer refuses a create that answers `200` ("already registered on this service"). Instead it looks for the hostname again directly before each create attempt, and a row it finds fails the deploy as one that already exists; a later deploy with `--adopt` takes it over. A row that another actor on the same app registers between that look and the create's answer is taken as the resource's own. The create is now resent when Prisma throttled it, which `main` never did; that wait is part of the window. It is not resent after any other failure, as on `main`.
+One behaviour changes from `main`. It now calls Prisma through Distilled, which does not expose the response status, so it no longer refuses a create that answers `200` ("already registered on this service"). Instead it looks for the hostname again directly before each create attempt, and a row it finds fails the deploy as one that already exists; a later deploy with `--adopt` takes it over. The create is now resent when Prisma throttled it, which `main` never did. It is not resent after any other failure, as on `main`.
 
 `Prisma.DomainOwnership` is the resource for a domain ownership: Prisma's record that a workspace has proved it owns a domain, which is an exact hostname or a wildcard. A hostname serves only once a verified domain ownership covers it. Prisma creates the one for a RoutingUrl's exact hostname itself; this resource declares one directly, for example a wildcard that covers every hostname under it:
 
@@ -81,7 +81,7 @@ yield* Prisma.DomainOwnership("example.com", {
 
 It counts as proved only when Prisma reports it `verified`. Prisma saves a domain ownership whether or not its TXT record resolves: `verified` when it does, `unverified` otherwise. Destroying the resource removes the domain ownership and its TXT record.
 
-The resource looks for an existing domain ownership twice: at the start, and again after it has waited for the TXT record, directly before it creates. One it finds and did not record is taken only while it is `unverified`, which grants nothing; otherwise it needs `--adopt`. Prisma's create is idempotent and returns an existing row as a success, so a row that another stack creates between the second look and the end of the create, including resends after a `5xx`, is taken as this stack's own. Two stacks that hit that window share one row, and destroying either removes it for both.
+The resource looks for an existing domain ownership twice: at the start, and again after it has waited for the TXT record, directly before it creates. One it finds and did not record is taken only while it is `unverified`, which grants nothing; otherwise it needs `--adopt`.
 
 This replaces #2698 and #2701.
 
