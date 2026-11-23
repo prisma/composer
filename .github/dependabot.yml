@@ -80,9 +80,7 @@ updates:
       # The published host the examples and CI run (pnpm-workspace.yaml's
       # catalog). It pins its own @prisma/cli-engine, @prisma/composer-cli and
       # @prisma/orm-toolchain, so it moves by hand with the engine, never on
-      # Dependabot's schedule. Until a host built on the workspace's ORM pin
-      # is published, a root pnpm override moves its @prisma/orm-toolchain to
-      # that pin. Enforced by scripts/check-cli-engine-pin.mjs.
+      # Dependabot's schedule. Enforced by scripts/check-cli-engine-pin.mjs.
       - dependency-name: "prisma"
 
   - package-ecosystem: github-actions
