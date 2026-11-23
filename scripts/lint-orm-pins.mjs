@@ -16,6 +16,10 @@
 // the peer would reintroduce, one shell over, the exact split the peer exists
 // to prevent.
 //
+// The root manifest's `pnpm.overrides` entries for an `@prisma/orm-*`
+// package, scoped (`prisma>@prisma/orm-toolchain`) or not, are specs too: an
+// override installs its version whatever the manifests say.
+//
 // Usage: node scripts/lint-orm-pins.mjs
 
 import { execFileSync } from 'node:child_process';
@@ -43,11 +47,12 @@ for (const manifest of manifests) {
   } catch {
     continue;
   }
-  for (const field of FIELDS) {
-    const deps = parsed[field];
+  const fields = manifest === 'package.json' ? [...FIELDS, 'pnpm.overrides'] : FIELDS;
+  for (const field of fields) {
+    const deps = field === 'pnpm.overrides' ? parsed.pnpm?.overrides : parsed[field];
     if (typeof deps !== 'object' || deps === null) continue;
     for (const [name, spec] of Object.entries(deps)) {
-      if (!SHELL.test(name)) continue;
+      if (!SHELL.test(name.split('>').at(-1))) continue;
       specs += 1;
       if (typeof spec !== 'string' || !EXACT.test(spec)) {
         problems.push(`${manifest} → ${field}.${name} is "${spec}", not a single exact version`);

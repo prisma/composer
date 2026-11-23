@@ -4,7 +4,9 @@
 // the pins ship inside the assembled `prisma` CLI, and a stale one drags
 // its own copy of the toolchain into user installs. That is how
 // orm-postgres@rc.1 sat beside orm-toolchain@rc.4 and re-broke composer
-// commands after the rc.4 bump (2026-08-18).
+// commands after the rc.4 bump (2026-08-18). Root `pnpm.overrides` count
+// too: an override that names an older ORM version than the manifests would
+// install it while every manifest still agrees.
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -14,6 +16,19 @@ import { dirname } from 'pathe';
 const ORM_PACKAGE_PATTERN = /^@prisma\/orm-/;
 const DEPENDENCY_MAPS = ['dependencies', 'devDependencies', 'peerDependencies'];
 
+/** The package an override key names: `prisma>@prisma/orm-toolchain` names `@prisma/orm-toolchain`. */
+export function overriddenPackage(key) {
+  return key.split('>').at(-1);
+}
+
+/**
+ * The root manifest's `pnpm.overrides`, as one more manifest for {@link ormPinViolations}.
+ * @param {{pnpm?: {overrides?: Readonly<Record<string, string>>}}} rootManifest
+ */
+export function overridesAsManifest(rootManifest) {
+  return { path: 'package.json (pnpm.overrides)', deps: rootManifest.pnpm?.overrides ?? {} };
+}
+
 /**
  * @param {readonly {path: string, deps: Readonly<Record<string, string>>}[]} manifests
  * @returns {readonly string[]} one line per disagreeing pin
@@ -22,7 +37,9 @@ export function ormPinViolations(manifests) {
   const versions = new Map();
   for (const { deps } of manifests) {
     for (const [name, version] of Object.entries(deps)) {
-      if (!ORM_PACKAGE_PATTERN.test(name) || version.startsWith('workspace:')) continue;
+      if (!ORM_PACKAGE_PATTERN.test(overriddenPackage(name)) || version.startsWith('workspace:')) {
+        continue;
+      }
       versions.set(version, true);
     }
   }
@@ -31,7 +48,9 @@ export function ormPinViolations(manifests) {
   const violations = [];
   for (const { path, deps } of manifests) {
     for (const [name, version] of Object.entries(deps)) {
-      if (!ORM_PACKAGE_PATTERN.test(name) || version.startsWith('workspace:')) continue;
+      if (!ORM_PACKAGE_PATTERN.test(overriddenPackage(name)) || version.startsWith('workspace:')) {
+        continue;
+      }
       if (version !== newest) {
         violations.push(
           `${path}: ${name}@${version} disagrees with ${newest}, the newest ORM pin in the tree`,
@@ -67,6 +86,7 @@ if (isDirectRun()) {
     const deps = {};
     for (const map of DEPENDENCY_MAPS) Object.assign(deps, parsed[map] ?? {});
     manifests.push({ path, deps });
+    if (path === 'package.json') manifests.push(overridesAsManifest(parsed));
   }
   const violations = ormPinViolations(manifests);
   if (violations.length > 0) {
