@@ -81,6 +81,19 @@ The platform's slice 7, owned by Søren from the platform's Console brief: the D
 | P2 | not assigned | U2 is released |
 | platform slice 7 (service page, cutover) and slice 10 (public docs) | slice 7: Søren with the platform session; slice 10: the platform session | platform slice 6 has merged |
 | P3 | not assigned | platform slice 8's API half has shipped |
+| Mark the old custom domain routes deprecated in the platform's spec (the draft prisma/pdp-control-plane#6143) | Will says when it merges | the Alchemy providers no longer call those routes; see below |
+
+### When the deprecation of the old routes can merge
+
+Will, 2026-11-24: "once the Alchemy providers have been migrated off the deprecated control plane routes, we need to merge https://github.com/prisma/pdp-control-plane/pull/6143 to deprecate those routes. But Distilled will omit routes marked deprecated _immediately_."
+
+Distilled's Prisma converter skips every operation the spec marks deprecated (`packages/prisma/scripts/convert.ts` on Distilled's `main`, checked 2026-11-24). So the next time Distilled's Prisma package is generated from a spec that has the marking, `getServiceDomains`, `createServiceDomain`, `getDomain`, `deleteDomain` and `createDomainRetry` disappear from it. In alchemy-run/alchemy#3529, `Prisma.CustomDomain` imports those five from Distilled, so from the day that pull request merges until `Prisma.CustomDomain` is deleted, the marking would break Alchemy's build at its next Distilled update. Therefore:
+
+1. alchemy-run/distilled#1348 and alchemy-run/alchemy#3529 merge, and Alchemy releases.
+2. Composer lowers a named hostname to `Prisma.RoutingUrl` (P2) and releases.
+3. A second Alchemy pull request deletes `Prisma.CustomDomain` and the five old operations of Alchemy's own client. After it, nothing in Alchemy calls the old routes.
+4. prisma/pdp-control-plane#6143 merges, with its removal date reset as its description says. Its own description also waits for a `prisma` CLI release that contains prisma/prisma-cli#400.
+5. The platform removes the routes on that date.
 
 ## Close-out
 
