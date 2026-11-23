@@ -22,14 +22,13 @@ Sam Goodwin's alchemy-run/alchemy#2701 and its base #2698 are replaced by the Al
 
 - **Platform slice 8 has not shipped.** The platform plan lists it as planned with no spec, and the live spec has none of the three error codes.
 - **Both branches are rebased onto upstream `main`.** Distilled `feat/prisma-routing-urls` is at `f3bce8aa6`; the old tips are kept as `archive/` branches on the forks.
-- **Upstream Distilled regenerated the Prisma client itself on 2026-11-15**, so it already has the RoutingUrl operations and the domain ownership statuses. Our Distilled branch now adds only `T.ResponseCode()` in the REST protocol, `httpStatus` on the two creates (patch 006), and patch 005 no longer adding `DomainOwnershipRequired` to `createWorkspaceDomainOwnership`. The error-code patch will be the fourth.
+- **Upstream Distilled regenerated the Prisma client itself on 2026-11-15**, so it already has the RoutingUrl operations and the domain ownership statuses. Until 2026-11-23 our Distilled branch also added `T.ResponseCode()` in the REST protocol and `httpStatus` on the two creates (patch 006). Both were removed that day: see [remove-http-status-plan.md](remove-http-status-plan.md). The branch now holds patch 005 no longer adding `DomainOwnershipRequired` to `createWorkspaceDomainOwnership`, the error-code patch 007, and the spec update.
 - **Alchemy cannot build against Distilled `main` yet.** Alchemy pins Distilled at `63ab82684`, 117 commits behind, and some of those commits are breaking changes Alchemy has not adopted. So the Alchemy branch pins a temporary Distilled branch on the bot's fork, `feat/prisma-routing-urls-on-alchemy-pin`: the same four commits on top of `63ab82684`. Before the Alchemy pull request opens, either upstream Alchemy has moved to a Distilled commit that contains our merged changes, or the Distilled change must be offered on the commit Alchemy pins. Check which when the time comes.
 - **Round 4 review** covered the two commits round 3 had not seen (`7de692c41` and `9f6f52c9e` after the rebase) and the fixes that followed. Reviews are in [reviews/d2-alchemy/](reviews/d2-alchemy/).
 
 ## Distilled pull request (branch `feat/prisma-routing-urls`)
 
-- **D1.** The REST protocol fills `T.ResponseCode()` members, and `@distilled.cloud/prisma` gets `httpStatus` on the two creates. Upstream has since added the RoutingUrl operations and the domain ownership `status` and `expiresAt` itself. One pull request, though Distilled's rules prefer the runtime change on its own; the description says why.
-- No typed RoutingUrl errors: D3 matches the generic `Conflict` and `UnprocessableEntity` errors, so U2 needs no second Distilled pull request.
+- **D1.** `@distilled.cloud/prisma` only: typed errors for the five RoutingUrl refusals, `DomainOwnershipRequired` off `createWorkspaceDomainOwnership`, and the spec update. No change to Distilled's core or generator. The earlier `httpStatus` design was rejected by a Distilled maintainer and removed on 2026-11-23.
 
 ## Alchemy pull request (branch `feat/prisma-domain-ownership-status`)
 
