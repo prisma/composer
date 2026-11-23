@@ -20,8 +20,11 @@ minimumReleaseAgeExclude:
   - '@durable-streams/server-conformance-tests'
 
 # The published prisma host every example, website and test/integration run.
-# One pin, so a host bump is one line; scripts/check-cli-engine-pin.mjs checks
-# that every manifest uses it and that the host shares the workspace engine.
+# One pin, which every manifest uses; scripts/check-cli-engine-pin.mjs checks
+# that and that the host shares the workspace engine. While the root
+# package.json has the override prisma>@prisma/orm-toolchain, the host bump
+# that moves this pin to a release built on the workspace's ORM version also
+# deletes that override.
 catalog:
   prisma: 8.0.0-rc.34
   # alchemy and every @alchemy.run/* package move together, at one release;

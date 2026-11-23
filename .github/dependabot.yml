@@ -73,14 +73,17 @@ updates:
       - dependency-name: "@durable-streams/server-conformance-tests"
       # Pinned exact and released in tandem with prisma/prisma-cli: composer's
       # command family and the `prisma` bin must mount the SAME engine build,
-      # so the version moves by hand as part of a coordinated engine →
+      # so the version moves by hand as part of a coordinated engine → ORM →
       # composer → prisma-cli release, never on Dependabot's schedule.
       # Enforced by scripts/check-cli-engine-pin.mjs.
       - dependency-name: "@prisma/cli-engine"
       # The published host the examples and CI run (pnpm-workspace.yaml's
-      # catalog). It pins its own @prisma/cli-engine and @prisma/composer-cli,
-      # so it moves by hand with the engine, never on Dependabot's schedule.
-      # Enforced by scripts/check-cli-engine-pin.mjs.
+      # catalog). It pins its own @prisma/cli-engine, @prisma/composer-cli and
+      # @prisma/orm-toolchain, so it moves by hand, after the engine, the ORM
+      # and composer release, never on Dependabot's schedule.
+      # scripts/check-cli-engine-pin.mjs checks that it runs the workspace's
+      # family on the workspace's engine; scripts/check-orm-pins.mjs checks
+      # that the root override of its toolchain names the workspace's ORM pin.
       - dependency-name: "prisma"
 
   - package-ecosystem: github-actions

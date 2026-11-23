@@ -1,6 +1,37 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ormPinViolations } from './check-orm-pins.mjs';
+import { ormPinViolations, overridesAsManifest } from './check-orm-pins.mjs';
+import { overriddenPackage } from './pnpm-override-key.mjs';
+
+describe('overriddenPackage', () => {
+  it('reads a bare package key', () => {
+    assert.equal(overriddenPackage('@prisma/orm-toolchain'), '@prisma/orm-toolchain');
+  });
+
+  it('reads the child of a parent>child key', () => {
+    assert.equal(overriddenPackage('prisma>@prisma/orm-toolchain'), '@prisma/orm-toolchain');
+    assert.equal(overriddenPackage('@prisma/orm-toolchain>foo'), 'foo');
+  });
+
+  it('reads the child of a parent@range>child key, keeping the range in the parent', () => {
+    assert.equal(
+      overriddenPackage('prisma@>=8.0.0-rc.1>@prisma/orm-toolchain'),
+      '@prisma/orm-toolchain',
+    );
+    assert.equal(
+      overriddenPackage('prisma@1 || >2>@prisma/orm-toolchain'),
+      '@prisma/orm-toolchain',
+    );
+  });
+
+  it('drops a version selector on the overridden package', () => {
+    assert.equal(overriddenPackage('@prisma/orm-toolchain@>=8'), '@prisma/orm-toolchain');
+    assert.equal(
+      overriddenPackage('prisma>@prisma/orm-toolchain@8.0.0-rc.24'),
+      '@prisma/orm-toolchain',
+    );
+  });
+});
 
 describe('ormPinViolations', () => {
   it('passes when every manifest pins each ORM package at one version', () => {
@@ -24,6 +55,45 @@ describe('ormPinViolations', () => {
     assert.match(violations[0], /b\/package\.json/);
     assert.match(violations[0], /@prisma\/orm-postgres@8\.0\.0-rc\.1/);
     assert.match(violations[0], /8\.0\.0-rc\.4/);
+  });
+
+  it('reports a root override of an ORM package that names another version than the manifests', () => {
+    const root = {
+      pnpm: {
+        overrides: {
+          '@prisma/cli-engine': '0.10.4',
+          'prisma>@prisma/orm-toolchain': '8.0.0-rc.25',
+        },
+      },
+    };
+    const manifests = [
+      { path: 'a/package.json', deps: { '@prisma/orm-toolchain': '8.0.0-rc.26' } },
+      overridesAsManifest(root),
+    ];
+    const violations = ormPinViolations(manifests);
+    assert.equal(violations.length, 1);
+    assert.match(violations[0], /package\.json \(pnpm\.overrides\)/);
+    assert.match(violations[0], /prisma>@prisma\/orm-toolchain@8\.0\.0-rc\.25/);
+  });
+
+  it('reports an override whose key carries a version selector on the ORM package', () => {
+    const root = { pnpm: { overrides: { '@prisma/orm-toolchain@>=8': '8.0.0-rc.25' } } };
+    const manifests = [
+      { path: 'a/package.json', deps: { '@prisma/orm-toolchain': '8.0.0-rc.26' } },
+      overridesAsManifest(root),
+    ];
+    const violations = ormPinViolations(manifests);
+    assert.equal(violations.length, 1);
+    assert.match(violations[0], /@prisma\/orm-toolchain@>=8@8\.0\.0-rc\.25/);
+  });
+
+  it('passes a root override of an ORM package at the manifests version', () => {
+    const root = { pnpm: { overrides: { 'prisma>@prisma/orm-toolchain': '8.0.0-rc.25' } } };
+    const manifests = [
+      { path: 'a/package.json', deps: { '@prisma/orm-toolchain': '8.0.0-rc.25' } },
+      overridesAsManifest(root),
+    ];
+    assert.deepEqual(ormPinViolations(manifests), []);
   });
 
   it('ignores non-ORM packages and workspace specifiers', () => {

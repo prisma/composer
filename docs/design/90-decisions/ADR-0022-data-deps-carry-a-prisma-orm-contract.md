@@ -1,5 +1,7 @@
 # ADR-0022: Data deps carry a Prisma ORM contract; deploys migrate to its ref
 
+Amended 2026-11-23: a `targetRef` whose ref file declares `policies`, which a ref may carry since Prisma ORM 8.0.0-rc.25, fails the deploy with `TARGET_REF_POLICIES_UNSUPPORTED` until Composer passes the policies to the ORM's `migrate`.
+
 ## Decision
 
 A second data primitive joins bare `postgres()`: `postgres`, a

@@ -125,6 +125,44 @@ describe('resolveTargetRef', () => {
     });
   });
 
+  test('a named targetRef that declares policies is refused with TARGET_REF_POLICIES_UNSUPPORTED', async () => {
+    await withTempDir(async (dir) => {
+      const refsDir = spaceRefsDirectory(spaceMigrationDirectory(dir, APP_SPACE_ID));
+      fs.mkdirSync(refsDir, { recursive: true });
+      await writeRef(refsDir, 'production', {
+        hash: A,
+        invariants: [],
+        policies: { dataProtection: { dataLoss: 'data-loss-forbidden' } },
+      });
+      let thrown: unknown;
+      try {
+        await resolveTargetRef(dir, contractJson, 'production');
+      } catch (e) {
+        thrown = e;
+      }
+      expect(thrown).toBeInstanceOf(OrmMigrationError);
+      expect((thrown as OrmMigrationError).code).toBe('TARGET_REF_POLICIES_UNSUPPORTED');
+      const { message } = thrown as OrmMigrationError;
+      expect(message).toContain('targetRef "production" declares policies');
+      expect(message).toContain('Composer does not yet deploy a ref with policies');
+      expect(message).toContain(
+        `refused until "policies" is removed from ${refsDir}/production.json`,
+      );
+      expect(message).toContain('prisma db migrate --to production');
+    });
+  });
+
+  test('a named targetRef without policies resolves to exactly its hash and invariants', async () => {
+    await withTempDir(async (dir) => {
+      const refsDir = spaceRefsDirectory(spaceMigrationDirectory(dir, APP_SPACE_ID));
+      fs.mkdirSync(refsDir, { recursive: true });
+      await writeRef(refsDir, 'production', { hash: A, invariants: ['inv-1'] });
+      const ref = await resolveTargetRef(dir, contractJson, 'production');
+      expect(Object.keys(ref).sort()).toEqual(['hash', 'invariants']);
+      expect(ref).toEqual({ hash: A, invariants: ['inv-1'] });
+    });
+  });
+
   test('a missing named targetRef fails loudly with TARGET_REF_NOT_FOUND', async () => {
     await withTempDir(async (dir) => {
       let thrown: unknown;
