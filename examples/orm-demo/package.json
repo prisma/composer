@@ -14,14 +14,14 @@
     "@prisma/composer-prisma-cloud": "workspace:0.40.0",
     "@prisma/orm-postgres": "8.0.0-rc.25",
     "effect": "catalog:",
-    "pg": "8.22.0"
+    "pg": "8.23.1"
   },
   "devDependencies": {
     "@prisma/composer": "workspace:0.40.0",
     "@prisma/composer-cli": "workspace:0.40.0",
-    "@prisma/management-api-sdk": "^1.80.0",
+    "@prisma/management-api-sdk": "^1.96.0",
     "@types/bun": "^1.3.13",
-    "@types/pg": "^8.20.0",
+    "@types/pg": "^8.23.1",
     "prisma": "catalog:",
     "typescript": "^6.0.3"
   }

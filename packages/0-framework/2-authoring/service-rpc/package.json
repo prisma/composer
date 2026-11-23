@@ -18,7 +18,7 @@
     "@internal/core": "workspace:0.40.0",
     "@internal/foundation": "workspace:0.40.0",
     "@standard-schema/spec": "^1.1.0",
-    "arktype": "^2.2.3"
+    "arktype": "^2.2.9"
   },
   "devDependencies": {
     "@internal/tsdown-config": "workspace:0.40.0",

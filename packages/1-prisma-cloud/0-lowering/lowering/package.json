@@ -24,7 +24,7 @@
     "@internal/bundle-paths": "workspace:0.40.0",
     "@internal/core": "workspace:0.40.0",
     "@internal/foundation": "workspace:0.40.0",
-    "@prisma/management-api-sdk": "^1.80.0",
+    "@prisma/management-api-sdk": "^1.96.0",
     "alchemy": "catalog:",
     "effect": "catalog:"
   },

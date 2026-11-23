@@ -41,10 +41,10 @@
     "dotenv-flow": "4.1.0",
     "effect": "catalog:",
     "esbuild": "^0.28.1",
-    "@prisma/management-api-sdk": "^1.80.0"
+    "@prisma/management-api-sdk": "^1.96.0"
   },
   "peerDependencies": {
-    "arktype": "^2.2.3",
+    "arktype": "^2.2.9",
     "zod": "^4.4.3"
   },
   "peerDependenciesMeta": {
@@ -69,7 +69,7 @@
     "@types/node": "^26.0.1",
     "tsdown": "^0.22.7",
     "typescript": "^6.0.3",
-    "arktype": "^2.2.3",
+    "arktype": "^2.2.9",
     "zod": "^4.4.3"
   },
   "license": "Apache-2.0",
