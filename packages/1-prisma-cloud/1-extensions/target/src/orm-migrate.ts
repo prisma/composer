@@ -282,15 +282,20 @@ async function runMigration(
     // Walk the AUTHORED migration graph toward the ref — a fresh DB starts
     // from empty and replays the committed baseline like any other migrate.
     // With a named ref, PN targets its hash and threads its invariants into
-    // path planning (the same refHash/refInvariants/refName the CLI's
-    // `migrate --to` passes); with the default head, PN's own head-ref
-    // semantics apply. Fails on no path / runner error; never synthesizes.
+    // path planning (the same ref target the CLI's `migrate --to` passes);
+    // with the default head, PN's own head-ref semantics apply. Fails on no
+    // path / runner error; never synthesizes.
     const result = await client.migrate({
       contract: contractJson,
       migrationsDir,
       invocation: { cwd: process.cwd(), configPath: undefined, dbGiven: false },
       ...(refName !== undefined
-        ? { refHash: ref.hash, refInvariants: ref.invariants, refName }
+        ? {
+            target: {
+              kind: 'ref',
+              ref: { name: refName, hash: ref.hash, invariants: ref.invariants },
+            },
+          }
         : {}),
     });
     if (!result.ok) {
