@@ -19,7 +19,7 @@
   "devDependencies": {
     "@prisma/composer": "workspace:0.40.0",
     "@prisma/composer-cli": "workspace:0.40.0",
-    "@prisma/management-api-sdk": "^1.80.0",
+    "@prisma/management-api-sdk": "^1.101.0",
     "@types/bun": "^1.3.13",
     "@types/pg": "^8.20.0",
     "prisma": "catalog:",

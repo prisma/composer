@@ -82,9 +82,12 @@ updates:
       # @prisma/orm-toolchain, so it moves by hand, after the engine, the ORM
       # and composer release, never on Dependabot's schedule.
       # scripts/check-cli-engine-pin.mjs checks that it runs the workspace's
-      # family on the workspace's engine; scripts/check-orm-pins.mjs checks
-      # that the root override of its toolchain names the workspace's ORM pin.
+      # family on the workspace's engine.
       - dependency-name: "prisma"
+      # The published host pins it exactly and @prisma/cli-engine takes it as
+      # a peer, so the workspace must resolve the host's version or two copies
+      # load and their client types disagree. It moves by hand with the host.
+      - dependency-name: "@prisma/management-api-sdk"
 
   - package-ecosystem: github-actions
     directory: /
