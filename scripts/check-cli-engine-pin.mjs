@@ -51,7 +51,9 @@
 //
 //   The workspace's host. The examples and CI run the published `prisma`
 //   host (pinned once, in the pnpm catalog), and a root pnpm override points
-//   its `@prisma/composer-cli` at the workspace package. This script checks
+//   its `@prisma/composer-cli` at the workspace package. Until a host built on
+//   the workspace's ORM pin is published, another root override moves the
+//   host's `@prisma/orm-toolchain` to that pin. This script checks
 //   that the installed host really resolves the workspace family and that
 //   the host and the family resolve the same engine copy, because a drifted
 //   override leaves CI green while it tests the registry's family, and two

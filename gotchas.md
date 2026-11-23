@@ -671,6 +671,8 @@ Consumers then see `Unable to connect` / `ConnectionRefused` on the service's RP
 - `pnpm.overrides["@prisma/composer-cli"] = "workspace:*"` makes the host depend on the workspace package. Without it, pnpm installs the registry version beside the host.
 - The root devDependency on `@prisma/composer-cli` puts that package's link in the root `node_modules`. The hoisted linker places `prisma` in the root `node_modules` but does not create the overridden link beside it (`node_modules/prisma/node_modules/@prisma/` stays empty), so the host finds the family only by walking up to the root.
 
+The host also pins an exact `@prisma/orm-toolchain`. Until a host built on the workspace's ORM pin is published, `pnpm.overrides["@prisma/orm-toolchain"]` moves it to that pin; without it the host emits contracts with an older toolchain than the app's `@prisma/orm-postgres`, which fails once the two disagree on how generated imports are rendered (8.0.0-rc.24 against rc.25: `✘ [CLI.UNEXPECTED] ',' expected`). Remove the override when the catalog's host depends on the workspace's ORM pin.
+
 The examples also declare `@prisma/composer-cli` as a devDependency, so CI's filtered build (`turbo run build --filter <example>...`) builds the family dist the host loads.
 
 The same layout is why package scripts run `bun ../../node_modules/.bin/prisma`: the hoisted linker links bins of hoisted packages only into the root `node_modules/.bin`.
