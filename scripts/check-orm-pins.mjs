@@ -12,14 +12,10 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'pathe';
+import { overriddenPackage } from './pnpm-override-key.mjs';
 
 const ORM_PACKAGE_PATTERN = /^@prisma\/orm-/;
 const DEPENDENCY_MAPS = ['dependencies', 'devDependencies', 'peerDependencies'];
-
-/** The package an override key names: `prisma>@prisma/orm-toolchain` names `@prisma/orm-toolchain`. */
-export function overriddenPackage(key) {
-  return key.split('>').at(-1);
-}
 
 /**
  * The root manifest's `pnpm.overrides`, as one more manifest for {@link ormPinViolations}.

@@ -24,6 +24,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { overriddenPackage } from './pnpm-override-key.mjs';
 
 const SHELL = /^@prisma\/orm-/;
 const EXACT = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
@@ -52,7 +53,7 @@ for (const manifest of manifests) {
     const deps = field === 'pnpm.overrides' ? parsed.pnpm?.overrides : parsed[field];
     if (typeof deps !== 'object' || deps === null) continue;
     for (const [name, spec] of Object.entries(deps)) {
-      if (!SHELL.test(name.split('>').at(-1))) continue;
+      if (!SHELL.test(overriddenPackage(name))) continue;
       specs += 1;
       if (typeof spec !== 'string' || !EXACT.test(spec)) {
         problems.push(`${manifest} → ${field}.${name} is "${spec}", not a single exact version`);
