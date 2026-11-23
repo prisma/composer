@@ -84,6 +84,10 @@ updates:
       # scripts/check-cli-engine-pin.mjs checks that it runs the workspace's
       # family on the workspace's engine.
       - dependency-name: "prisma"
+      # The published host pins it exactly and @prisma/cli-engine takes it as
+      # a peer, so the workspace must resolve the host's version or two copies
+      # load and their client types disagree. It moves by hand with the host.
+      - dependency-name: "@prisma/management-api-sdk"
 
   - package-ecosystem: github-actions
     directory: /
