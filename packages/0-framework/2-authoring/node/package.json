@@ -16,7 +16,7 @@
   "dependencies": {
     "@internal/bundle-paths": "workspace:0.40.0",
     "@internal/core": "workspace:0.40.0",
-    "@vercel/nft": "^1.10.2",
+    "@vercel/nft": "^1.11.1",
     "esbuild": "^0.28.1"
   },
   "devDependencies": {
