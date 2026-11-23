@@ -53,8 +53,7 @@
   "pnpm": {
     "overrides": {
       "@prisma/composer-cli": "workspace:*",
-      "@prisma/cli-engine": "0.10.4",
-      "prisma>@prisma/orm-toolchain": "8.0.0-rc.25"
+      "@prisma/cli-engine": "0.10.4"
     },
     "onlyBuiltDependencies": [
       "prisma",
