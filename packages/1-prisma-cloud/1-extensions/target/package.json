@@ -31,6 +31,7 @@
     "@internal/node": "workspace:0.40.0",
     "@internal/s3-protocol": "workspace:0.40.0",
     "@internal/service-rpc": "workspace:0.40.0",
+    "@prisma/orm-framework": "8.0.0-rc.25",
     "@prisma/orm-postgres": "8.0.0-rc.25",
     "@prisma/orm-toolchain": "8.0.0-rc.25",
     "@standard-schema/spec": "^1.1.0",

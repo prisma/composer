@@ -1122,6 +1122,9 @@ importers:
       '@internal/service-rpc':
         specifier: workspace:0.40.0
         version: link:../../../0-framework/2-authoring/service-rpc
+      '@prisma/orm-framework':
+        specifier: 8.0.0-rc.25
+        version: 8.0.0-rc.25(typescript@6.0.3)
       '@prisma/orm-postgres':
         specifier: 8.0.0-rc.25
         version: 8.0.0-rc.25(@prisma/cli-engine@0.10.4(@prisma/management-api-sdk@1.101.0)(magicast@0.5.5))(@types/pg@8.20.4)(magicast@0.5.5)(pg@8.22.0)(temporal-polyfill@1.0.8)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
@@ -1201,6 +1204,9 @@ importers:
       '@internal/service-rpc':
         specifier: workspace:0.40.0
         version: link:../../../0-framework/2-authoring/service-rpc
+      '@prisma/orm-framework':
+        specifier: 8.0.0-rc.25
+        version: 8.0.0-rc.25(typescript@6.0.3)
       '@prisma/orm-postgres':
         specifier: 8.0.0-rc.25
         version: 8.0.0-rc.25(@prisma/cli-engine@0.10.4(@prisma/management-api-sdk@1.101.0)(magicast@0.5.5))(@types/pg@8.20.4)(magicast@0.5.5)(pg@8.22.0)(temporal-polyfill@1.0.8)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
@@ -1568,6 +1574,9 @@ importers:
       '@prisma/management-api-sdk':
         specifier: ^1.101.0
         version: 1.101.0
+      '@prisma/orm-framework':
+        specifier: 8.0.0-rc.25
+        version: 8.0.0-rc.25(typescript@6.0.3)
       '@prisma/orm-toolchain':
         specifier: 8.0.0-rc.25
         version: 8.0.0-rc.25(@prisma/cli-engine@0.10.4(@prisma/management-api-sdk@1.101.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
