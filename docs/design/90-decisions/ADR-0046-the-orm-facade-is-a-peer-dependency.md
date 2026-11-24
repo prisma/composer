@@ -12,7 +12,7 @@ The application installs the facade itself. Composer's `/orm` and `/auth/pack` e
 
 Every `@prisma/orm-*` specifier anywhere in this workspace is a single exact version, and all of them name the same version. That includes the root `package.json`'s `pnpm.overrides` entries for an `@prisma/orm-*` package. `scripts/lint-orm-pins.mjs` enforces both halves.
 
-The packages Composer *drives* rather than *extends* stay regular dependencies: `@prisma/orm-toolchain` carries the config loader, the CLI and the migration tools, which Composer's deploy runs on its own behalf.
+The packages Composer *drives* rather than *extends* stay regular dependencies: `@prisma/orm-toolchain` carries the config loader, the CLI and the migration tools, which Composer's deploy runs on its own behalf, and `@prisma/orm-framework`, at the toolchain's version, so that the toolchain's peer on it is met.
 
 ## Reasoning
 
