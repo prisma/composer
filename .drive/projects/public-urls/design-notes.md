@@ -78,3 +78,19 @@ Settled with Will, 2026-10-29. Two rules for a named hostname:
 **What U2 chose, and its limit (2026-11-20).** The Alchemy resource checks it. That check copies the platform's rule for when a hostname points at the switchboard, and it cannot see a RoutingUrl in another workspace that holds the new hostname, so in that one case the change goes through and the new hostname stays pending. The client check is a stopgap: the lasting fix is the platform refusing the update itself, which the U2 plan records as a platform request.
 
 **What this amends.** ADR-0060's consequence "Changing a hostname replaces it … the old one stops being served, and the new one serves once verified" becomes: a change to a hostname that can serve replaces it; a change from a serving hostname to one that cannot serve fails the deploy. The ADR was amended with P1, because P1's guide already describes the rule.
+
+## 13. In Alchemy a domain ownership is a plain workspace resource, and it owns its TXT record
+
+Settled with Will on 2026-11-24, for the Alchemy pull request (alchemy-run/alchemy#3529). Note 7's rule for Composer does not change: Composer never records or deletes a domain ownership.
+
+**What Will said.** "For Composer purposes, there's no reason you'd want to delete a domain ownership record. For Alchemy, we're aiming to model resources in the platform's model, so actually, it may not be appropriate to remove the delete operation. If you want to control whether or not this domain ownership record exists for this particular workspace, Alchemy should be unopinionated and just give you the CRUD operations for you to control." And: "If you're modeling the domain ownership record in Alchemy, you're modeling resources at the workspace level. It's really up to you how that relates between projects in the platform. It's only Composer that decides that Alchemy's scope will be isolated to one project as a container. Alchemy doesn't have that concept."
+
+**Why.** Alchemy's maintainers review the pull request. Each behaviour that differs from how an Alchemy resource normally works is something they can object to. Will, on removing the rule that took an `unverified` row without `--adopt`: "If we're being more consistent with Alchemy's typical model, there's less opinionated stuff for the Alchemy team to complain about."
+
+**What follows for `Prisma.DomainOwnership`.** Destroy deletes the row; a user who wants to keep it uses Alchemy's retain policy. A row the stack did not record needs `--adopt`, whatever its status. Two stacks that declare the same domain share one row, and destroying either removes it for both; Will accepted that ("Yeah, I think that's correct").
+
+**The TXT record belongs to the domain ownership.** Will: "It seems like a bad idea for a routing URL to have DNS if it's actually the domain ownership record that requires the DNS records. Perhaps we should remove this from the routing URL and keep it only on the DO." So `Prisma.RoutingUrl`'s `dns` publishes the CNAME, which is the RoutingUrl's own record, and `Prisma.DomainOwnership`'s `dns` publishes the TXT record. This replaces the decision of 2026-11-20 that the RoutingUrl's `dns` publishes both.
+
+**The platform's end state to design for.** Will: by the end of this project the platform checks verified domain ownerships again, and one whose TXT record is gone becomes `expiring` and later `unverified`. On 2026-11-24 the daily job looked only at `expiring` ones; that is a gap being closed, not a property to rely on.
+
+The plan and its reviews: [slices/u2-routing-url-resource/domain-ownership-crud-plan.md](slices/u2-routing-url-resource/domain-ownership-crud-plan.md).
