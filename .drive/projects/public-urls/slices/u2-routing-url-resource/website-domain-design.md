@@ -2,6 +2,8 @@
 
 Status: version 3, 2026-11-25, revised after two rounds of architect and principal engineer reviews in [reviews/website-domain/](reviews/website-domain/). Replaces decision 5 and correction 8 of [domain-ownership-crud-plan.md](domain-ownership-crud-plan.md) for `Prisma.Website`. Everything else in that plan stands.
 
+Two behaviours were added during the code reviews, after version 3, and Will accepted both on 2026-11-25 ("Accept both"): a domain ownership declared in the stack logs a warning about itself while it is `unverified` or `expiring`, and an unverified one is read again on every deploy, so `alchemy plan` lists it as an update until Prisma verifies it (step 4 of "With ownership", and the revision after it).
+
 ## What Will asked for
 
 - "Let's aim for consistency with Alchemy's existing solutions."
