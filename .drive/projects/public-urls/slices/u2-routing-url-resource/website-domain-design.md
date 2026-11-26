@@ -158,7 +158,7 @@ Tests:
 ## Not in this design
 
 - A cross-stack `Prisma.DomainOwnership.ref(...)`. `lookup` covers a domain ownership managed by another stack.
-- **Sites deployed with a token limited to one project.** The released site worked for such a deployer, because its custom domain route was per service. An `ownership: false` form, where the RoutingUrl sends `createDomainOwnership: true`, was considered and is not enough on its own: with `dns`, the RoutingUrl reads the TXT from `GET /v1/workspaces/{id}/domain-ownerships/verification`, and a hostname change of a serving RoutingUrl lists the workspace's domain ownerships. Both routes need `workspaceManage` access. Supporting such deployers needs those reads to tolerate a refusal, or Prisma to open them to project tokens. Recorded in `deferred.md`, pending Will.
+- **Sites deployed with a token limited to one project.** The released site worked for such a deployer, because its custom domain route was per service. An `ownership: false` form, where the RoutingUrl sends `createDomainOwnership: true`, was considered and is not enough on its own: with `dns`, the RoutingUrl reads the TXT from `GET /v1/workspaces/{id}/domain-ownerships/verification`, and a hostname change of a serving RoutingUrl lists the workspace's domain ownerships. Both routes need `workspaceManage` access. Supporting such deployers needs those reads to tolerate a refusal, or Prisma to open them to project tokens. Recorded in `deferred.md`. Will, 2026-11-26: "we don't need to support it yet".
 
 ## Alternatives considered
 
