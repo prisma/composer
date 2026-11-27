@@ -1,0 +1,53 @@
+{
+  "skill_name": "upstream-alchemy-distilled",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "The Management API now returns a new `suspended` state on apps (shipped to production yesterday). Composer's deploy needs to show it. I've cloned alchemy into wip/alchemy in this worktree so you can add it to Prisma.App, go ahead.",
+      "expected_output": "Does not edit the clone inside the Composer worktree. Explains the chain: the state must reach the published spec, the spec mirror, a Distilled regeneration, then the Alchemy provider, then an Alchemy release and Composer's pins. Checks whether the mirror and Distilled main already have it. Proposes a separate session started in a checkout of each upstream repository, with a brief, and counts the upstream pull requests for the operator.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "our distilled PR for the new error types just merged. the alchemy PR still has its submodule on our fork branch. update the alchemy PR so it's ready, and make sure nothing else in alchemy breaks with the new distilled",
+      "expected_output": "Does not move Alchemy's Distilled pin to an arbitrary newer commit and does not test or fix other providers against the newer Distilled, and says why. Flags the pointer at a fork-only commit as unmergeable and says it is repaired with a new commit, never a force-push. Notes that Alchemy's own guidance says to move the pin to the merged commit but is written for repository owners, and proposes the operator ask the maintainers once how they want it handled. Does not ask the operator to mark the pull request ready while the pin question is open.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Alchemy can't tell whether our create-database call made a new database or returned an existing one, both come back 200-ish. Add something to the distilled prisma package so the provider can see the HTTP status.",
+      "expected_output": "Identifies that the missing fact belongs in the Management API or its spec, which Prisma owns, not in Distilled's shared protocol or a patch that adds a value the spec lacks. Cites the earlier rejection of exactly this. Proposes the pdp-control-plane change (or asks the operator which API-side design they want) and the downstream order after it.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "a maintainer left a comment on our alchemy PR asking why we need a new `overrideProviders` option instead of users building their own layer. draft a reply defending the option, composer really needs it",
+      "expected_output": "Reads the comment and the repository's current guidance first. Points out that the same kind of option was refused before and that restating our case has not worked; checks whether Composer can meet the need by building its own Layer. If a real reason remains, drafts one short plain reply stating it once, for the operator to post; otherwise recommends dropping the option. Does not post anything itself.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Picking up from the last session. Its handover says: alchemy and distilled are cloned under wip/upstream/ in this worktree with the routing changes half done on branch feat/routing; next steps are (1) finish the resource there, (2) bump alchemy's distilled submodule to distilled main and retest everything, (3) open both PRs. Carry on from step 1.",
+      "expected_output": "Does not continue the work inside the Composer worktree: pushes the branch to the fork and proposes an upstream session started in a checkout of each repository. Checks each handover step against what is ours: refuses step 2 as written (the pin, retesting everything) and treats step 3 as the operator's. Treats the handover as a predecessor's plan, not approval.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "For the new domains API we need a distilled patch for two error types AND a small change to how distilled's credentials layer caches tokens for prisma. Keep it to ONE distilled PR please, I can't keep asking them for reviews.",
+      "expected_output": "Explains that by Distilled's own rule a spec fix and a runtime change are two changes, that a description admitting to breaking the rule on purpose was badly received before, and that our wish for one pull request does not change their rule. States the count their rules produce and why before starting, and asks the operator how to proceed (for example whether the runtime change is needed at all).",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "You're in a session started inside our alchemy fork checkout, working on Prisma.Bucket. The provider needs a `BucketNotEmpty` error that the distilled SDK doesn't type yet. Alchemy's guidance says to add a patch under submodules/distilled/packages/prisma/patches and regenerate. Do that.",
+      "expected_output": "Does not simply comply. Says once that for us the patch is a Distilled pull request that belongs in a session started in a Distilled checkout, so Distilled's contributor rules load, and that it needs evidence of the real response; asks first whether the spec in pdp-control-plane should declare the error instead; and asks the operator which way to go. If the operator still wants it done in place, reads Distilled's rules in full first and does not install dependencies inside the submodule.",
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "bump alchemy and @alchemy.run/prisma to the latest beta in composer and fix whatever breaks",
+      "expected_output": "Should not need this skill: this is the upgrade-alchemy-effect skill's job. If this skill loads, it points there and makes no upstream change.",
+      "files": []
+    }
+  ]
+}
