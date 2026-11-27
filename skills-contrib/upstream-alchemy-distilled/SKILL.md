@@ -77,7 +77,7 @@ In both repositories we own the Prisma package and its tests, docs and examples.
 
 Their guidance (as read in November 2026) is written for their own agents, who own the whole repository. So it tells its reader to do some things that an outside contributor should not do unasked. On these, the limits here hold, because each comes from what happened when we did it (the history has the incidents). If their guidance ever addresses outside contributors directly on one of them, theirs wins and this skill needs a fix.
 
-- **Moving the Distilled pin.** See the next section.
+- **Moving the Distilled pin past our own change.** Their instruction to move it to the merged commit we follow as written. Moving it further, or testing what a move does to other providers, is theirs. See the next section.
 - **Checking the whole repository.** Their guidance says to type-check the whole workspace before a commit. Run the type check for the Prisma package and the test files your change touches. Their CI checks everything else on the pull request, so read it. A whole-workspace run on the operator's machine reports errors in other people's code that we will not fix.
 - **Opening early drafts that carry a status report.** Their own agents do this for work in progress. Our drafts have been finished by a maintainer, merged before we were done, or left to rot. Open a pull request when the work is complete.
 - **Rebasing at checkpoints.** Once a branch has a pull request, merge their `main` into it and never force-push: maintainers push to our branches, and a force-push discards their commits and their place in the review.
@@ -90,13 +90,15 @@ When a previous session's handover lists upstream work, check each step against 
 
 Alchemy pins one Distilled commit for the whole repository. An Alchemy change that needs newer Distilled code cannot build until that pin includes it.
 
-Their skill for provider work tells its reader to land the Distilled change first, then move the pin to the merged commit and commit it. That is written for agents who own the repository. The record for outside pull requests is mixed: when one of ours moved the pin it pulled in other providers' SDK changes and broke two of their type checks, and a maintainer re-pinned it himself; on another, a maintainer made the pin commit on our branch. A pin pointed at a commit that exists only on our fork cannot be fetched by anyone else, so it can never merge.
+Their skill for provider work tells its reader to land the Distilled change first, then move the pin to the merged commit and commit it. We follow that as written, without asking first, until a maintainer tells us otherwise (the operator's decision, 2026-11-27): the move is from one of their commits to another of their commits, and it is what their own guidance asks for. If a maintainer does say otherwise, do what they say and record it with its date in [references/history.md](references/history.md).
 
-So settle it early. These steps apply the same way to a pull request that is already open.
+What stays theirs is everything beyond that one step. Move the pin to the exact commit our Distilled change merged as, and nothing later: when one of ours moved it further, it pulled in other providers' SDK changes and broke two of their type checks, and a maintainer re-pinned it himself. Do not test or fix other providers against the new pin. A pin pointed at a commit that exists only on our fork cannot be fetched by anyone else, so it can never merge.
 
-1. Before opening anything, have the operator ask the maintainers, in his own words and wherever he talks to them, how they want the pin handled for this change, quoting their own instruction. Record the answer and its date in [references/history.md](references/history.md) so the next agent does not ask again.
-2. Open the Distilled pull request complete; it does not wait for that answer. Build and test the Alchemy change locally by checking the Distilled branch out in your working copy of the submodule without committing the pointer, and keep it on a fork branch with no pull request. Their rules ask a breaking Distilled change to link the Alchemy change that adapts to it: link the fork branch and say its pull request opens once the pin can include this change. An Alchemy pull request that cannot build is unfinished work, so it is opened early only if a maintainer asks for it, and then as a draft that says so.
-3. Once the Distilled change merges, do what the maintainers said. If they have not answered by then, their written instruction is the best evidence of what they want: tell the operator, and with his yes move the pin to the exact merged commit and nothing later, in a commit of its own, and say so in the description. Then open the Alchemy pull request. If their CI fails in other providers because of the pin, report that to the operator; do not fix other providers.
+These steps apply the same way to a pull request that is already open.
+
+1. Open the Distilled pull request complete. Build and test the Alchemy change locally by checking the Distilled branch out in your working copy of the submodule without committing the pointer, and keep it on a fork branch with no pull request. Their rules ask a breaking Distilled change to link the Alchemy change that adapts to it: link the fork branch and say its pull request opens once the Distilled change has merged. An Alchemy pull request that cannot build is unfinished work, so it is opened early only if a maintainer asks for it, and then as a draft that says so.
+2. Once the Distilled change merges, move the pin to that exact merged commit, in a commit of its own, and say so in the description with the commit's hash. If the pin has to pass over other Distilled commits to get there, check that the Prisma package still builds and its touched tests pass, and name in the description anything in that range that changes the Prisma SDK.
+3. Then open the Alchemy pull request. If their CI fails in other providers because of the pin, report that to the operator; do not fix other providers.
 4. A pull request that already carries a pointer to our fork is repaired with a new commit that restores their pin, never a force-push.
 
 ## Work inside their repository, in its own session
@@ -183,7 +185,7 @@ A merged upstream pull request changes nothing in Composer until Alchemy release
 
 - The work was done in a session started in that repository, with its current guidance read in full in that session.
 - It touches only the Prisma package, or each file outside it copies an existing shape and is explained in the description.
-- The pin is as the maintainers said they want it (or, with no answer, as their written instruction says and the operator agreed), and nothing points at a commit that exists only on our fork.
+- The Distilled pin is at the exact commit our Distilled change merged as (or where a maintainer said to put it), in a commit of its own, and nothing points at a commit that exists only on our fork.
 - Alchemy: every behaviour is covered by a test that deployed for real, and you ran the ones your change touches. Distilled: each patch has its evidence.
 - It is one change by that repository's definition.
 - The description follows their current format, and a fresh reader has checked it against their conventions.
