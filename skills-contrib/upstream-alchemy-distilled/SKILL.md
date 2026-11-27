@@ -12,7 +12,7 @@ An agent or engineer on the Prisma side whose work needs something from Alchemy'
 
 If you are about to edit a file in either repository from a Composer session, stop and read "Work inside their repository, in its own session" first.
 
-Why this skill exists: between May and November 2026, Prisma's pull requests to these two repositories drew dozens of objections, rewrites and rejections from the maintainers, and several of their contributor rules were written within hours of one of ours. Almost all of it came from a few causes: working without their guidance loaded, inventing where they wanted a copy of an existing pattern, putting a change in the wrong repository, and treating their repositories as ours. [references/history.md](references/history.md) has the incidents. Read it before your first upstream change, and again when a maintainer pushes back.
+Why this skill exists: between May and November 2026, Prisma's pull requests to these two repositories drew dozens of objections, rewrites and rejections from the maintainers, and several of their contributor rules were written within hours of one of ours. Almost all of it came from a few causes: working without their guidance loaded, inventing where they wanted a copy of an existing pattern, putting a change in the wrong repository, and treating their repositories as ours.
 
 ## The pieces
 
@@ -75,7 +75,7 @@ Whichever case it is: before offering any opinion on how a platform resource sho
 
 In both repositories we own the Prisma package and its tests, docs and examples. Everything else belongs to the maintainers. Offering to do their upkeep is not a courtesy: it puts our name on changes to code we do not maintain, and it spends the operator's time and machine on work they do anyway.
 
-Their guidance (as read in November 2026) is written for their own agents, who own the whole repository. So it tells its reader to do some things that an outside contributor should not do unasked. On these, the limits here hold, because each comes from what happened when we did it (the history has the incidents). If their guidance ever addresses outside contributors directly on one of them, theirs wins and this skill needs a fix.
+Their guidance (as read in November 2026) is written for their own agents, who own the whole repository. So it tells its reader to do some things that an outside contributor should not do unasked. On these, the limits here hold, because each comes from what happened when we did it. If their guidance ever addresses outside contributors directly on one of them, theirs wins and this skill needs a fix.
 
 - **Moving the Distilled pin past our own change.** Their instruction to move it to the merged commit we follow as written. Moving it further, or testing what a move does to other providers, is theirs. See the next section.
 - **Checking the whole repository.** Their guidance says to type-check the whole workspace before a commit. Run the type check for the Prisma package and the test files your change touches. Their CI checks everything else on the pull request, so read it. A whole-workspace run on the operator's machine reports errors in other people's code that we will not fix.
@@ -90,7 +90,7 @@ When a previous session's handover lists upstream work, check each step against 
 
 Alchemy pins one Distilled commit for the whole repository. An Alchemy change that needs newer Distilled code cannot build until that pin includes it.
 
-Their skill for provider work tells its reader to land the Distilled change first, then move the pin to the merged commit and commit it. We follow that as written, without asking first, until a maintainer tells us otherwise (the operator's decision, 2026-11-27): the move is from one of their commits to another of their commits, and it is what their own guidance asks for. If a maintainer does say otherwise, do what they say and record it with its date in [references/history.md](references/history.md).
+Their skill for provider work tells its reader to land the Distilled change first, then move the pin to the merged commit and commit it. We follow that as written, without asking first, until a maintainer tells us otherwise (the operator's decision, 2026-11-27): the move is from one of their commits to another of their commits, and it is what their own guidance asks for. If a maintainer does say otherwise, do what they say, and add it to this section with its date.
 
 What stays theirs is everything beyond that one step. Move the pin to the exact commit our Distilled change merged as, and nothing later: when one of ours moved it further, it pulled in other providers' SDK changes and broke two of their type checks, and a maintainer re-pinned it himself. Do not test or fix other providers against the new pin. A pin pointed at a commit that exists only on our fork cannot be fetched by anyone else, so it can never merge.
 
@@ -125,7 +125,7 @@ Do not edit an upstream repository from a clone inside a Composer worktree, and 
 
 - What the change is for, and the design as our best effort: the purpose is fixed, the mechanism is open to challenge against their code and conventions.
 - Where the platform's design documents for the resource are, and that it reads them before modelling a lifecycle.
-- The absolute path of this skill's folder, and that it reads `SKILL.md` and `references/history.md` there. Composer's skills are not installed in their repository.
+- The absolute path of this skill's folder, and that it reads `SKILL.md` there. Composer's skills are not installed in their repository.
 - The limits in "What is ours and what is not".
 - That a change to what users declare or see goes back to the operator before it is built.
 - That rules meant for pull requests in our own repositories do not carry over: our description style, any line naming the agent, auto-merge, and merging it ourselves. Upstream, the maintainers merge. An independent review before the pull request opens is still worth having, judged against their guidance and not our own review checklist.
@@ -175,7 +175,7 @@ Opening, editing, marking ready, commenting on or closing an upstream pull reque
 
 ## When the operator's request and this skill pull apart
 
-The operator may ask for the very thing this skill warns against: finish it in the clone here, keep it to one pull request, make sure nothing else breaks, defend the option, add it to the SDK anyway. They may not have the history in mind when they ask. Say once, briefly, what happened the last time and what you would do instead, and ask. Their answer decides anything on our side: where the work is done, how much we check, what we propose. It does not change the maintainers' rules or decisions. Where the request is something a maintainer has already refused, the next step is the operator raising it with them, not a pull request that tries it again.
+The operator may ask for the very thing this skill warns against: finish it in the clone here, keep it to one pull request, make sure nothing else breaks, defend the option, add it to the SDK anyway. They may not have the earlier incidents in mind when they ask. Say once, briefly, what happened the last time and what you would do instead, and ask. Their answer decides anything on our side: where the work is done, how much we check, what we propose. It does not change the maintainers' rules or decisions. Where the request is something a maintainer has already refused, the next step is the operator raising it with them, not a pull request that tries it again.
 
 ## After it merges
 
