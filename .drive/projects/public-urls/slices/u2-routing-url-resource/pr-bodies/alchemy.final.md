@@ -122,9 +122,9 @@ To move a hostname, replace it with a RoutingUrl for the same app and hostname i
 This change needs two Distilled changes to the generated Prisma SDK:
 
 - alchemy-run/distilled#1348, merged, types the RoutingUrl refusals.
-- alchemy-run/distilled#1508 regenerates the SDK from Prisma's 2026-11-26 spec, which adds the `no_domain_ownership` state.
+- alchemy-run/distilled#1508, merged, regenerates the SDK from Prisma's 2026-11-26 spec, which adds the `no_domain_ownership` state.
 
-Alchemy `main` pins a Distilled commit (`f0b37d720d`) that is 127 commits behind #1348. Moving the pin that far is a separate change. So **`submodules/distilled` points at a branch on the wmadden-electric fork** (`feat/prisma-routing-urls-on-alchemy-pin`), which has both changes rebuilt on the pinned commit. Once the second Distilled pull request merges, maintainers should move the submodule to a Distilled `main` commit before or when this merges.
+Alchemy `main` pins a Distilled commit (`f0b37d720d`) that is 127 commits behind #1348. Moving the pin that far is a separate change. So **`submodules/distilled` points at a branch on the wmadden-electric fork** (`feat/prisma-routing-urls-on-alchemy-pin`), which has both changes rebuilt on the pinned commit. Both have merged, so the submodule should move to a Distilled `main` commit when this merges. We have left that to you, since the move brings in every other Distilled change since `f0b37d720d`.
 
 This supersedes Sam Goodwin's closed #2701 (`Prisma.DomainOwnership`, proved automatically for site domains) and its base #2698 (a typed error for the missing `TXT`). It carries their DNS-checking parts.
 
