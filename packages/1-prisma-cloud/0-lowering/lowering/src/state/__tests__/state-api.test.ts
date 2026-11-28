@@ -305,8 +305,9 @@ describe('prismaStateLayer against the platform state API', () => {
       branchId: BRANCH_ID,
     },
     supplied?: ManagementApiClient,
+    declaredAddresses?: readonly string[],
   ): Promise<A> => {
-    const layer = stateLayerAgainst(fake.origin, ids, { client: supplied }).pipe(
+    const layer = stateLayerAgainst(fake.origin, ids, { client: supplied }, declaredAddresses).pipe(
       Layer.provide(stackContext),
     ) as unknown as Layer.Layer<State>;
     return Effect.runPromise(
@@ -437,6 +438,43 @@ describe('prismaStateLayer against the platform state API', () => {
     expect(String(error)).toContain('has no deploy state');
     expect(String(error)).toContain('"legacy.web"');
     // The refusal released the lease on the way out.
+    expect(fake.liveLeaseIds()).toEqual([]);
+  });
+
+  test('an empty scope proceeds when every live app holds the address of a declared service as its logicalId', async () => {
+    fake.apps.push({
+      id: 'app-1',
+      name: 'api',
+      projectId: PROJECT_ID,
+      branchId: BRANCH_ID,
+      logicalId: 'shop.api',
+    });
+
+    await expect(
+      runLayer(() => Effect.void, undefined, undefined, ['shop.api']),
+    ).resolves.toBeUndefined();
+  });
+
+  test('an empty scope refuses a live app whose logicalId the deploy does not declare, and names it', async () => {
+    fake.apps.push(
+      {
+        id: 'app-1',
+        name: 'api',
+        projectId: PROJECT_ID,
+        branchId: BRANCH_ID,
+        logicalId: 'shop.api',
+      },
+      { id: 'app-2', name: 'extra', projectId: PROJECT_ID, branchId: BRANCH_ID },
+    );
+
+    const error: unknown = await runLayer(() => Effect.void, undefined, undefined, [
+      'shop',
+      'shop.api',
+    ]).catch((e: unknown) => e);
+
+    expect(String(error)).toContain('checking the empty deploy state scope');
+    expect(String(error)).toContain('app "extra" (no logicalId)');
+    expect(String(error)).not.toContain('app "api"');
     expect(fake.liveLeaseIds()).toEqual([]);
   });
 

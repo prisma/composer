@@ -6,7 +6,11 @@ export interface FakeBranchResource {
   name: string;
   projectId: string;
   branchId: string;
+  /** Unset is served as `null`, as the Management API serves a row with no logical id. */
+  logicalId?: string;
 }
+
+const served = (row: FakeBranchResource) => ({ ...row, logicalId: row.logicalId ?? null });
 
 export interface FakeState {
   apps: FakeBranchResource[];
@@ -50,7 +54,7 @@ export const fakeClient = (state: FakeState): ManagementApiClient => {
         (query['branchId'] === undefined || row.branchId === query['branchId']),
     );
     return okResponse({
-      data: filtered,
+      data: filtered.map(served),
       pagination: { nextCursor: null, hasMore: false },
     });
   };
@@ -65,7 +69,7 @@ export const fakeClient = (state: FakeState): ManagementApiClient => {
       );
       const offset = query['cursor'] === undefined ? 0 : Number(query['cursor']);
       const pageSize = state.appsPageSize ?? filtered.length;
-      const data = filtered.slice(offset, offset + pageSize);
+      const data = filtered.slice(offset, offset + pageSize).map(served);
       if (state.appsCursorStuck === true) {
         return Promise.resolve(
           okResponse({ data, pagination: { nextCursor: String(offset), hasMore: true } }),

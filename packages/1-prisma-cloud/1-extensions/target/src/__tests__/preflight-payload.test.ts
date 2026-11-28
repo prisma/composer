@@ -4,12 +4,14 @@ import type { ManagementApiClient } from '@internal/lowering';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { PrismaCloudContainer } from '../container.ts';
 import {
+  declaredServiceAddresses,
   decodePreflightPayload,
   preflightView,
   serializeDeployPreflightPayload,
   serializeDevPreflightPayload,
 } from '../control/preflight-payload.ts';
-import { compute, variable } from '../exports/index.ts';
+import { prismaCloud } from '../exports/control.ts';
+import { compute, rawPostgres, variable } from '../exports/index.ts';
 import { runPreflight } from '../preflight.ts';
 
 const build = {
@@ -152,7 +154,51 @@ describe('what the payload may contain', () => {
     expect(decodePreflightPayload(serializeDeployPreflightPayload({ updatedAt }))).toEqual({
       kind: 'deploy',
       updatedAt,
+      serviceAddresses: [],
     });
+  });
+
+  test('the payload holds the address of every service the deploy declares, sorted, once each', () => {
+    const payload = serializeDeployPreflightPayload({
+      updatedAt: new Map(),
+      serviceAddresses: ['shop.web', 'shop.api', 'shop.web'],
+    });
+
+    expect(payload).toBe('{"updatedAt":{},"serviceAddresses":["shop.api","shop.web"]}');
+    expect(declaredServiceAddresses(payload)).toEqual(['shop.api', 'shop.web']);
+  });
+
+  test("the extension's preflight sends the address of every service the graph declares, and of no other node", async () => {
+    const declared = Load(
+      appRoot('shop', ({ provision }) => {
+        provision(compute({ name: 'web', deps: {}, build }));
+        provision(rawPostgres({ name: 'db' }));
+      }),
+    );
+
+    const payload = await prismaCloud().preflight?.({
+      graph: declared,
+      configuration: {},
+      secrets: {},
+      container: new PrismaCloudContainer(
+        { appName: 'shop', environment: 'production' },
+        'proj',
+        undefined,
+      ),
+      environment: 'production',
+    });
+
+    expect(declaredServiceAddresses(payload)).toEqual(['shop.web']);
+  });
+
+  test('no deploy payload declares no service addresses — a destroy runs no preflight', () => {
+    expect(declaredServiceAddresses(undefined)).toEqual([]);
+    expect(declaredServiceAddresses('{"updatedAt":{}}')).toEqual([]);
+    expect(
+      declaredServiceAddresses(
+        serializeDevPreflightPayload({ absentVariables: [], platformVariableVersions: {} }),
+      ),
+    ).toEqual([]);
   });
 
   test('an absent payload decodes as nothing sent', () => {
@@ -164,6 +210,9 @@ describe('what the payload may contain', () => {
     expect(() => decodePreflightPayload('"a string"')).toThrow(/not a JSON object/);
     expect(() => decodePreflightPayload('{"updatedAt":{"A_KEY":42}}')).toThrow(
       /"updatedAt" is not an object of string timestamps/,
+    );
+    expect(() => decodePreflightPayload('{"updatedAt":{},"serviceAddresses":"shop.web"}')).toThrow(
+      /"serviceAddresses" is not an array of strings/,
     );
   });
 });

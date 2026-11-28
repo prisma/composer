@@ -43,6 +43,11 @@ import { migrateLegacyResourceState } from './legacy-resources.ts';
  * ones alchemy itself already provides to every state store
  * (`StackServices`).
  *
+ * `declaredAppAddresses` are the addresses of the compute services a deploy
+ * declares. With no deploy state, the deploy proceeds only when the Branch
+ * holds nothing but apps that each have one of them as `logicalId`
+ * (ADR-0057). A destroy passes none.
+ *
  * Any bootstrap failure is wrapped into an operator-facing
  * `HostedStateBootstrapError` (naming the Project/Branch and the step that
  * failed — see `errors.ts`) before dying the layer (loud, immediate,
@@ -59,12 +64,13 @@ export const prismaStateLayer = (
     readonly defaultBranchId?: string;
   },
   credentials?: Pick<CallerCredentials<client.ManagementApiClient>, 'client'>,
+  declaredAppAddresses: readonly string[] = [],
 ): Layer.Layer<State, never, StackServices> => {
   const suppliedOrigin =
     credentials?.client === undefined ? undefined : suppliedClientOrigin(process.env);
   return Layer.unwrap(
     (suppliedOrigin === undefined ? tokenClientOrigin() : Effect.succeed(suppliedOrigin)).pipe(
-      Effect.map((origin) => stateLayerAgainst(origin, ids, credentials)),
+      Effect.map((origin) => stateLayerAgainst(origin, ids, credentials, declaredAppAddresses)),
     ),
   ).pipe(Layer.orDie);
 };
@@ -105,6 +111,7 @@ export const stateLayerAgainst = (
     readonly defaultBranchId?: string;
   },
   credentials?: Pick<CallerCredentials<client.ManagementApiClient>, 'client'>,
+  declaredAppAddresses: readonly string[] = [],
 ): Layer.Layer<State, never, StackServices> => {
   const { projectId, branchId, defaultBranchId } = ids;
   const dependencies = client.suppliedOrFromEnv(credentials, apiOrigin);
@@ -138,13 +145,19 @@ export const stateLayerAgainst = (
 
       // Before the store exists — so the check precedes Alchemy's first state
       // read. An empty scope with live resources (apps, databases, buckets)
-      // on the Branch means the environment's state is elsewhere (an older Composer
-      // version) or the resources are foreign: refuse before Alchemy mutates any.
+      // on the Branch that the deploy does not declare means the environment's
+      // state is elsewhere (an older Composer version) or the resources are
+      // foreign: refuse before Alchemy mutates any.
       const occupied = yield* scopeOccupied(mgmt, scope, lease).pipe(
         Effect.mapError(bootstrapError('probing the deploy state scope')),
       );
       if (!occupied) {
-        yield* failOnEmptyScopeWithLiveResources(projectId, stateBranchId, stack.name).pipe(
+        yield* failOnEmptyScopeWithLiveResources(
+          projectId,
+          stateBranchId,
+          stack.name,
+          declaredAppAddresses,
+        ).pipe(
           Effect.provideService(client.ManagementClient, mgmt),
           Effect.mapError(bootstrapError('checking the empty deploy state scope')),
         );

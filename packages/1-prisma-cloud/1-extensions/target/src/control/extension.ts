@@ -50,7 +50,7 @@ import { resourceId } from '../resource-ids.ts';
 import { S3CredentialsProvider } from '../s3-credentials-resource.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
 import { STREAMS_API_KEY } from '../streams-keys.ts';
-import { serializeDeployPreflightPayload } from './preflight-payload.ts';
+import { declaredServiceAddresses, serializeDeployPreflightPayload } from './preflight-payload.ts';
 
 /**
  * ADR-0031's registered provisioner for RPC_PEER_KEY: mints one `ServiceKey`
@@ -156,7 +156,11 @@ const streamsApiKeyValue: ProviderParam['value'] = (refs) => {
 /** The user-facing state descriptor: `state: prismaState()` in the `composer` section of `prisma.config.ts` (ADR-0017). */
 export const prismaState = (): StateDescriptor => ({
   extension: PRISMA_CLOUD_EXTENSION_ID,
-  create: (container, credentials?: CallerCredentials<Prisma.ManagementApiClient>) => {
+  create: (
+    container,
+    credentials?: CallerCredentials<Prisma.ManagementApiClient>,
+    preflight?: string,
+  ) => {
     const { projectId, branchId, defaultBranchId } = prismaCloudContainerOf(container);
     return prismaStateLayer(
       {
@@ -165,6 +169,7 @@ export const prismaState = (): StateDescriptor => ({
         ...(defaultBranchId !== undefined ? { defaultBranchId } : {}),
       },
       credentials,
+      declaredServiceAddresses(preflight),
     );
   },
 });
@@ -336,7 +341,16 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
 
     // The annotation recovers this extension's client type from the framework's erased one.
     preflight: (input: PrismaCloudPreflightInput) =>
-      runPreflight(input).then(serializeDeployPreflightPayload),
+      runPreflight(input).then((payload) =>
+        serializeDeployPreflightPayload({
+          ...payload,
+          serviceAddresses: input.graph.nodes
+            .filter(
+              ({ node }) => node.kind === 'service' && node.extension === PRISMA_CLOUD_EXTENSION_ID,
+            )
+            .map(({ id }) => id),
+        }),
+      ),
 
     // Records the deploy as a Build so it appears in the Console, and passes
     // the build's id into the apply so the state store can report what the
