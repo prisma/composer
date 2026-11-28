@@ -668,11 +668,50 @@ the upgrade with its old address label (`api` instead of `shop.api`), because
 the emulators keep the labels they were created with; `prisma dev --fresh`
 recreates the instances with full addresses, and deletes their local data.
 
+## Moving a service that was deployed without Composer
+
+A service that was first deployed some other way, for example straight through
+the Management API, can move to Composer and keep its ID and its URL. Declare
+it as a compute service in the app, then tell the platform which service it is
+by setting its `logicalId` to the service's address:
+
+```sh
+curl -X PATCH "https://api.prisma.io/v1/apps/<service-id>" \
+  -H "Authorization: Bearer $PRISMA_SERVICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"logicalId":"shop.api"}'
+```
+
+The address is the app name, a dot, and the service's provision ID, which is
+its `name` unless `provision()` sets an `id`. The app name must be the
+Project's name, so that the deploy finds the Project. Then deploy. The log
+prints `adopting shop.api` and `adopted shop.api`.
+
+What the first deploy changes:
+
+- The service's display name becomes its address.
+- The service gets a new deployment, built from the app's artifact, and its URL
+  moves to it. Check the URL after the deploy: a deploy can succeed while the
+  new deployment fails to start. Earlier deployments stay on the service.
+- Composer writes its own `COMPOSER_…` variables. Variables you set yourself
+  stay.
+
+From then on Composer owns the service. A deploy that no longer declares it
+deletes it, like any other service of the app.
+
+On a Project that has never been deployed with Composer, the deploy starts only
+when every service on the Branch has the address of a declared service as its
+`logicalId`. Otherwise it stops before it changes anything and names each
+resource it cannot take over. A database or a bucket on that Branch always stops
+the deploy: Composer would delete it, and its data, as soon as a deploy no
+longer declared it. Move it to another Project first, or delete it if you do not
+need it.
+
 ## Upgrading from an older state store
 
 Older framework versions stored deploy state differently: first in a workspace-level `prisma-composer-state` project, later in a small `prisma-composer-state` database on each environment's Branch. The current version stores state behind the platform's API and never reads either legacy store — there is no automated migration. The cutover is the same for both generations: destroy, upgrade, redeploy.
 
-Deploying over a live legacy environment is refused up front. The deploy finds no API-hosted state but sees resources (apps, databases, or buckets) already on the Branch, and stops with an error saying the environment has no deploy state but its Branch already holds resources — instead of blindly recreating every resource and failing halfway. Cut over per app:
+Deploying over a live legacy environment is refused up front. The deploy finds no API-hosted state but sees resources (apps, databases, or buckets) already on the Branch, and stops with an error saying the environment has no deploy state but its Branch already holds resources — instead of blindly recreating every resource and failing halfway. (The one case that is not refused is [a service with a declared address](#moving-a-service-that-was-deployed-without-composer); an older framework version never set one.) Cut over per app:
 
 1. On the **old** framework version, destroy every environment: each named one, then production. (Equivalent: delete the environment's Branch — or the whole Project, for production — in the Console or via the Management API.)
 2. Upgrade the framework packages.

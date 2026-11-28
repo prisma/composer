@@ -1,9 +1,10 @@
 /**
  * What this extension's preflight hands the lowering, which reads it as
- * `LowerContext.preflight`. One payload carries either kind:
+ * `LowerContext.preflight`, and the state store. One payload carries either kind:
  *
  * - deploy: a JSON object holding `updatedAt`, which maps each platform
- *   variable a service reads to the `updatedAt` of the row the platform resolves;
+ *   variable a service reads to the `updatedAt` of the row the platform resolves,
+ *   and `serviceAddresses`, the address of every service the deploy declares;
  * - `prisma dev`: `dev:` followed by JSON naming the unset platform variables and an
  *   HMAC-SHA256 of the current value of each platform variable a service reads.
  *
@@ -23,6 +24,8 @@ export interface PreflightView {
 
 export interface DeployPreflightPayload {
   readonly updatedAt: ReadonlyMap<string, string>;
+  /** The address of every service the deploy declares. The state store reads it: with no deploy state, an App holding one of these as its `logicalId` is taken over (ADR-0057). */
+  readonly serviceAddresses?: readonly string[];
 }
 
 export interface DevPreflightPayload {
@@ -32,7 +35,11 @@ export interface DevPreflightPayload {
 
 export type DecodedPreflightPayload =
   | { readonly kind: 'none' }
-  | ({ readonly kind: 'deploy' } & DeployPreflightPayload)
+  | {
+      readonly kind: 'deploy';
+      readonly updatedAt: ReadonlyMap<string, string>;
+      readonly serviceAddresses: readonly string[];
+    }
   | {
       readonly kind: 'dev';
       readonly absentVariables: ReadonlySet<string>;
@@ -46,8 +53,12 @@ const byName = ([a]: [string, unknown], [b]: [string, unknown]) => (a < b ? -1 :
 export function serializeDeployPreflightPayload(
   payload: DeployPreflightPayload,
 ): string | undefined {
-  if (payload.updatedAt.size === 0) return undefined;
-  return JSON.stringify({ updatedAt: Object.fromEntries([...payload.updatedAt].sort(byName)) });
+  const serviceAddresses = [...new Set(payload.serviceAddresses ?? [])].sort();
+  if (payload.updatedAt.size === 0 && serviceAddresses.length === 0) return undefined;
+  return JSON.stringify({
+    updatedAt: Object.fromEntries([...payload.updatedAt].sort(byName)),
+    ...(serviceAddresses.length > 0 ? { serviceAddresses } : {}),
+  });
 }
 
 export function serializeDevPreflightPayload(payload: DevPreflightPayload): string {
@@ -66,6 +77,10 @@ function isStringRecord(value: unknown): value is Readonly<Record<string, string
     !Array.isArray(value) &&
     Object.values(value).every((member) => typeof member === 'string')
   );
+}
+
+function isStringArray(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((member) => typeof member === 'string');
 }
 
 function parseJson(text: string, error: (reason: string) => Error): unknown {
@@ -105,7 +120,17 @@ export function decodePreflightPayload(payload: string | undefined): DecodedPref
   if (!('updatedAt' in parsed) || !isStringRecord(parsed.updatedAt)) {
     throw deployPayloadError('its "updatedAt" is not an object of string timestamps');
   }
-  return { kind: 'deploy', updatedAt: new Map(Object.entries(parsed.updatedAt)) };
+  const serviceAddresses: unknown = 'serviceAddresses' in parsed ? parsed.serviceAddresses : [];
+  if (!isStringArray(serviceAddresses)) {
+    throw deployPayloadError('its "serviceAddresses" is not an array of strings');
+  }
+  return { kind: 'deploy', updatedAt: new Map(Object.entries(parsed.updatedAt)), serviceAddresses };
+}
+
+/** The addresses of the services the deploy declares; none when no deploy preflight ran, as on a destroy. */
+export function declaredServiceAddresses(payload: string | undefined): readonly string[] {
+  const sent = decodePreflightPayload(payload);
+  return sent.kind === 'deploy' ? sent.serviceAddresses : [];
 }
 
 const deployPayloadError = (reason: string): Error =>

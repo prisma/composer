@@ -1814,6 +1814,35 @@ describe('resolveStateLayer', () => {
 
     expect(seen).toEqual([undefined]);
   });
+
+  test("the config's state.create receives its own extension's preflight payload, and undefined when there is none", () => {
+    const { descriptor } = fakeExtension();
+    const seen: Array<unknown> = [];
+    const config: PrismaAppConfig = {
+      extensions: [descriptor],
+      state: {
+        extension: descriptor.id,
+        create: (_container, _credentials, preflight) => {
+          seen.push(preflight);
+          return stateSentinel('config');
+        },
+      },
+    };
+
+    resolveStateLayer(
+      opts({
+        preflightPayloads: new Map([
+          [descriptor.id, 'its-payload'],
+          ['another-extension', 'not-its-payload'],
+        ]),
+      }),
+      config,
+      new Map(),
+    );
+    resolveStateLayer(opts(), config, new Map());
+
+    expect(seen).toEqual(['its-payload', undefined]);
+  });
 });
 
 describe('mergedProviders', () => {

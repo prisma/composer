@@ -33,6 +33,8 @@ export interface FakeApp {
   name: string;
   projectId: string;
   branchId: string;
+  /** Unset is served as `null`, as the Management API serves a row with no logical id. */
+  logicalId?: string;
 }
 
 const json = (res: http.ServerResponse, status: number, body: unknown): void => {
@@ -162,11 +164,13 @@ export class FakeStateApi {
     if (segments[1] === 'apps' && method === 'GET') {
       const projectId = url.searchParams.get('projectId');
       const branchId = url.searchParams.get('branchId');
-      const data = this.apps.filter(
-        (a) =>
-          (projectId === null || a.projectId === projectId) &&
-          (branchId === null || a.branchId === branchId),
-      );
+      const data = this.apps
+        .filter(
+          (a) =>
+            (projectId === null || a.projectId === projectId) &&
+            (branchId === null || a.branchId === branchId),
+        )
+        .map((a) => ({ ...a, logicalId: a.logicalId ?? null }));
       return json(res, 200, { data, pagination: { nextCursor: null, hasMore: false } });
     }
 

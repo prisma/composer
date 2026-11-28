@@ -424,6 +424,14 @@ It finds the app as `deploy` does (`--name`, `--entry`) and fails with
 address, kind, platform ID, URL per line; `--json`: `[{ address, kind, platformId, url }]`. It needs
 a `prisma` CLI release that includes it; 8.0.0-rc.26 does not.
 
+**Moving a service deployed without Composer.** Declare it as a compute
+service, set its `logicalId` to that service's address (`PATCH /v1/apps/<id>`
+with `{"logicalId":"shop.api"}` on the Management API), then deploy. The
+service keeps its ID and URL, gets a new deployment, and is owned by Composer
+from then on. On a Project never deployed with Composer, a service without a
+declared address, or any database or bucket, stops the deploy before it changes
+anything.
+
 **Using an address with platform commands.** A `prisma project|service|postgres|bucket`
 command takes `@<environment>:<address>` in place of the platform ID
 (`prisma service logs @pr-42:shop.api`); no environment means production. It

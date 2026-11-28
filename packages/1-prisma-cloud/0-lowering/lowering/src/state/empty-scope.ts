@@ -32,9 +32,15 @@ export const scopeOccupied = (
     ),
   ).pipe(Effect.map((fqns) => fqns.length > 0));
 
-interface NamedResource {
-  readonly id: string;
+interface BranchResource {
+  readonly kind: 'app' | 'database' | 'bucket';
   readonly name: string;
+  readonly logicalId: string | null;
+}
+
+interface ListedResource {
+  readonly name: string;
+  readonly logicalId: string | null;
 }
 
 // Bounded (collectPages): these checks run under the deploy lease, so broken
@@ -45,66 +51,79 @@ const listBranchResources = (
   client: ManagementApiClient,
   projectId: string,
   branchId: string,
-): Effect.Effect<
-  readonly { kind: 'app' | 'database' | 'bucket'; name: string }[],
-  PrismaApiError
-> =>
+): Effect.Effect<readonly BranchResource[], PrismaApiError> =>
   Effect.gen(function* () {
     const query = (cursor: string | undefined) =>
       cursor === undefined ? { projectId, branchId } : { projectId, branchId, cursor };
-    const apps: readonly NamedResource[] = yield* collectPages(
+    const apps: readonly ListedResource[] = yield* collectPages(
       `apps on branch ${branchId}`,
       (cursor) => call(() => client.GET('/v1/apps', { params: { query: query(cursor) } })),
     );
-    const databases: readonly NamedResource[] = yield* collectPages(
+    const databases: readonly ListedResource[] = yield* collectPages(
       `databases on branch ${branchId}`,
       (cursor) => call(() => client.GET('/v1/databases', { params: { query: query(cursor) } })),
     );
-    const buckets: readonly NamedResource[] = yield* collectPages(
+    const buckets: readonly ListedResource[] = yield* collectPages(
       `buckets on branch ${branchId}`,
       (cursor) => call(() => client.GET('/v1/buckets', { params: { query: query(cursor) } })),
     );
-    return [
-      ...apps.map((r) => ({ kind: 'app' as const, name: r.name })),
-      ...databases.map((r) => ({ kind: 'database' as const, name: r.name })),
-      ...buckets.map((r) => ({ kind: 'bucket' as const, name: r.name })),
-    ];
+    const of = (kind: BranchResource['kind']) => (r: ListedResource) => ({
+      kind,
+      name: r.name,
+      logicalId: r.logicalId,
+    });
+    return [...apps.map(of('app')), ...databases.map(of('database')), ...buckets.map(of('bucket'))];
   });
+
+const describeResource = (r: BranchResource): string =>
+  `${r.kind} "${r.name}" (${r.logicalId === null ? 'no logicalId' : `logicalId "${r.logicalId}"`})`;
 
 /**
  * The empty-scope-with-live-resources case: the platform state API holds no
  * resources for (stack, Alchemy stage) while the platform already has Compute apps,
- * databases, or buckets on the target Branch — the environment was deployed by an
- * older Composer version whose state store is never read, or the resources
- * belong to something other than this app. The rows could be identified by
- * logicalId, but the rest of the state could not be rebuilt from them
- * (ADR-0057), so fail once, up front. A genuinely fresh deploy sees an empty
- * Branch and passes. Connections are not counted: they are children of databases, which
- * are. Local dev never reaches this: it lowers with
+ * databases, or buckets on the target Branch.
+ *
+ * An app whose `logicalId` is one of `declaredAppAddresses` is the row of a
+ * service this deploy declares, and the deploy takes it over (ADR-0057). Any
+ * other resource fails the check, once, up front: it was deployed by an older
+ * Composer version whose state store is never read, or it belongs to
+ * something other than this app. A database or a bucket always fails it: a
+ * later deploy without its node deletes the row and its data, so taking one
+ * over is not offered here. A destroy passes no addresses, so it is refused
+ * whenever the Branch holds a resource. A genuinely fresh deploy sees an
+ * empty Branch and passes. Connections are not counted: they are children of
+ * databases, which are. Local dev never reaches this: it lowers with
  * `state: devState()`, Alchemy's local file store (execute-dev.ts).
  */
 export const failOnEmptyScopeWithLiveResources = (
   projectId: string,
   branchId: string,
   stack: string,
+  declaredAppAddresses: readonly string[] = [],
 ): Effect.Effect<void, PrismaApiError, ManagementClient> =>
   Effect.gen(function* () {
     const client = yield* ManagementClient;
     const resources = yield* listBranchResources(client, projectId, branchId);
-    if (resources.length === 0) return;
-    const names = resources.map((r) => `${r.kind} "${r.name}"`).join(', ');
+    const declared = new Set(declaredAppAddresses);
+    const refused = resources.filter(
+      (r) => r.kind !== 'app' || r.logicalId === null || !declared.has(r.logicalId),
+    );
+    if (refused.length === 0) return;
     return yield* Effect.fail(
       new PrismaApiError({
         status: 0,
         message:
-          `the Branch ${branchId} (stack "${stack}") has no deploy state, but already ` +
-          `holds ${String(resources.length)} resource(s): ${names}. Without state, a deploy would try to ` +
-          'recreate them and a destroy would remove nothing. This happens when the environment was deployed ' +
-          'by a Composer version that kept deploy state elsewhere, or when the resources belong to ' +
-          'something other than this app. Delete the environment (its branch, or the project for production) ' +
-          'in the Prisma Console or via the Management API, then deploy again; an environment from an older ' +
-          'version can instead be destroyed with that version first. If the resources belong to ' +
-          'something else, remove them or deploy into a different project.',
+          `the Branch ${branchId} (stack "${stack}") has no deploy state, but already holds ` +
+          `${String(refused.length)} resource(s) that this deploy cannot take over: ` +
+          `${refused.map(describeResource).join(', ')}. Without state, a deploy would try to ` +
+          'recreate them and a destroy would remove nothing. To take over an app created outside ' +
+          'Composer, set its logicalId to the address of the service that declares it (PATCH ' +
+          '/v1/apps/<id> with {"logicalId":"<app>.<node>"}), then deploy again. Composer then owns ' +
+          'it: a deploy without the node deletes it. A database or a bucket is never taken over. ' +
+          'An environment from a Composer version that kept deploy state elsewhere must be ' +
+          'destroyed with that version, or deleted (its branch, or the project for production), ' +
+          'then deployed again. If the resources belong to something else, remove them or deploy ' +
+          'into a different project.',
       }),
     );
   });
