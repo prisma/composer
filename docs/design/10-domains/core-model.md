@@ -529,7 +529,11 @@ function defineConfig(config: PrismaAppConfig): PrismaAppConfig   // in @prisma/
 // defaulted, never read from the environment.
 interface StateDescriptor {
   readonly extension: string                            // matched against ExtensionDescriptor.id
-  create(container: ContainerInstance | undefined): AlchemyStateLayer
+  create(
+    container: ContainerInstance | undefined,
+    credentials?: CallerCredentials,
+    preflight?: PreflightPayload,                       // what its own extension's preflight returned this run
+  ): AlchemyStateLayer
 }
 
 // One extension's control-plane registry: everything the deploy pipeline may look
@@ -742,7 +746,7 @@ function lowering(root: ModuleNode, config: PrismaAppConfig, opts: LowerOptions)
 ```
 
 `lower()` is nothing but the whole-stack wrapper:
-`Alchemy.Stack(opts.name, { providers: mergedProviders(config), state: opts.state ?? config.state.create(containers.get(config.state.extension)) }, lowering(root, config, opts))`
+`Alchemy.Stack(opts.name, { providers: mergedProviders(config), state: opts.state ?? config.state.create(containers.get(config.state.extension), opts.credentials, opts.preflightPayloads.get(config.state.extension)) }, lowering(root, config, opts))`
 — Alchemy requires a state layer; the config supplies the deploy's one state store,
 built from its owning extension's own resolved container, and an explicit
 `opts.state` always wins. Providers are **every configured

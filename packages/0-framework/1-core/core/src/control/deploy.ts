@@ -639,8 +639,8 @@ function descriptorFor(
  * The state-layer precedence a deploy resolves to: an explicit opts.state
  * always wins; failing that, the config's own (required) state descriptor,
  * created with its owning extension's resolved container (`undefined` when
- * that extension declared none). A pure function so the precedence is
- * testable without booting Alchemy.
+ * that extension declared none) and that extension's preflight payload. A
+ * pure function so the precedence is testable without booting Alchemy.
  */
 export function resolveStateLayer(
   opts: LowerOptions,
@@ -648,7 +648,12 @@ export function resolveStateLayer(
   containers: ReadonlyMap<string, ContainerInstance>,
 ): AlchemyStateLayer {
   return (
-    opts.state ?? config.state.create(containers.get(config.state.extension), opts.credentials)
+    opts.state ??
+    config.state.create(
+      containers.get(config.state.extension),
+      opts.credentials,
+      opts.preflightPayloads.get(config.state.extension),
+    )
   );
 }
 

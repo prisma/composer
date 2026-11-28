@@ -118,10 +118,11 @@ export interface ExtensionDescriptor {
 export interface StateDescriptor {
   /** The owning extension's id — matched against `ExtensionDescriptor.id`. */
   readonly extension: string;
-  /** Build the state layer. `container` is the owning extension's resolved instance; `undefined` when it declared no container descriptor. `credentials` is as `ExtensionDescriptor.providers` receives it. */
+  /** Build the state layer. `container` is the owning extension's resolved instance; `undefined` when it declared no container descriptor. `credentials` is as `ExtensionDescriptor.providers` receives it. `preflight` is what the owning extension's preflight handed back this run, as its lowering reads it from `LowerContext.preflight`; `undefined` when it returned nothing or ran no preflight, as on a destroy. */
   create(
     container: ContainerInstance | undefined,
     credentials?: CallerCredentials,
+    preflight?: PreflightPayload,
   ): AlchemyStateLayer;
 }
 

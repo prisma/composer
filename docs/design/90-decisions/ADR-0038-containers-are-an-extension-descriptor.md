@@ -53,7 +53,11 @@ export interface ContainerInstance {
 
 export interface StateDescriptor {
   readonly extension: string;
-  create(container: ContainerInstance | undefined): AlchemyStateLayer;
+  create(
+    container: ContainerInstance | undefined,
+    credentials?: CallerCredentials,
+    preflight?: PreflightPayload,
+  ): AlchemyStateLayer;
 }
 ```
 
@@ -88,6 +92,9 @@ everywhere.
 changes from a bare `() => AlchemyStateLayer` factory to a `StateDescriptor`
 whose `extension` field is matched against `ExtensionDescriptor.id`, so core
 can look up that extension's resolved container and hand it to `create()`.
+`create()` also receives what that extension's deploy preflight returned this
+run, as the extension's lowering does through `LowerContext.preflight`. A
+destroy runs no preflight, so it passes none.
 The state store construction that used to read `PRISMA_PROJECT_ID`/
 `PRISMA_BRANCH_ID` straight from the environment now receives its ids as a
 parameter, like every other extension-side read of deploy identity.
